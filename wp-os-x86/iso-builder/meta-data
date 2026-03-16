@@ -1,0 +1,2 @@
+instance-id: wp-os
+local-hostname: @@OS_HOSTNAME@@

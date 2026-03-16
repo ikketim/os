@@ -1,0 +1,15 @@
+[Unit]
+Description=WhiteoutProjectOS First Boot Provisioning
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/local/bin/wp-os-provision.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wp-os-provision.sh
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
