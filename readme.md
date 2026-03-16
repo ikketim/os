@@ -2,6 +2,8 @@
 
 A purpose-built operating system image for running Whiteout Survival and Kingshot Discord bots. Available for x86/64 (bare metal or Proxmox LXC) and Raspberry Pi.
 
+# THIS IS FOR TESTING PURPOSE ONLY!!! 
+## It's still in development so bugs are expected
 ---
 
 ## Pre-built Images
