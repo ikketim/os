@@ -10,7 +10,7 @@ OS_PASSWORD="wpur"
 OS_HOSTNAME="wp-os-server"
 
 # -- Source repository ---------------------------------------
-REPO_BASE="https://raw.githubusercontent.com/whiteout-project/os/main"
+REPO_BASE="https://raw.githubusercontent.com/ikketim/os/main"
 
 # -- Bot repositories ----------------------------------------
 # WOS Python bot
