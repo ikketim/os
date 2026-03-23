@@ -17,6 +17,9 @@ REPO_BASE="https://raw.githubusercontent.com/ikketim/os/main"
 BOT_MAIN_PY="https://raw.githubusercontent.com/whiteout-project/bot/main/main.py"
 BOT_INSTALL_PY="https://raw.githubusercontent.com/whiteout-project/install/main/install.py"
 
+# Kingshot install script (separate from WOS installer)
+BOT_KINGSHOT_INSTALL_PY="https://raw.githubusercontent.com/kingshot-project/Kingshot-Discord-Bot/main/install/install.py"
+
 # WOS JavaScript bot
 BOT_JS_REPO="https://github.com/whiteout-project/Whiteout-Survival-Discord-Bot"
 BOT_JS_BRANCH="main"
