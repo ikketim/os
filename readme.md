@@ -40,7 +40,7 @@ WhiteoutProjectOS/
 | | |
 |---|---|
 | Username | `wp-os-user` |
-| Password | `wpur` |
+| Password | `wpusr` |
 | SSH port | `22` |
 | VNC port | `5900` |
 | Web panel | `http://<ip>:8080` |
