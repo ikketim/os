@@ -18,6 +18,7 @@ BOT_JS_REPO="@@BOT_JS_REPO@@"
 BOT_JS_BRANCH="@@BOT_JS_BRANCH@@"
 BOT_KINGSHOT_REPO="@@BOT_KINGSHOT_REPO@@"
 BOT_KINGSHOT_BRANCH="@@BOT_KINGSHOT_BRANCH@@"
+BOT_KINGSHOT_INSTALL_PY="@@BOT_KINGSHOT_INSTALL_PY@@"
 DEFAULT_BOT="@@DEFAULT_BOT@@"
 BACKGROUND_IMAGE_URL="@@BACKGROUND_IMAGE_URL@@"
 DESKTOP="@@DESKTOP@@"
@@ -62,8 +63,8 @@ install_wos_py() {
   info "Installing WOS Python bot..."
   mkdir -p "$BOT_DIR"
   cd "$BOT_DIR"
-  wget -q -O main.py "$BOT_MAIN_PY"
-  wget -q -O install.py "$BOT_INSTALL_PY"
+  wget -q -O main.py "$BOT_MAIN_PY"       || error "Failed to download main.py from ${BOT_MAIN_PY}"
+  wget -q -O install.py "$BOT_INSTALL_PY" || error "Failed to download install.py from ${BOT_INSTALL_PY}"
   chown "${OS_USERNAME}:${OS_USERNAME}" main.py install.py
   sudo -u "$OS_USERNAME" python3 -m venv "$VENV_DIR"
   sudo -u "$OS_USERNAME" "$VENV_DIR/bin/pip" install --quiet --upgrade pip
@@ -93,10 +94,10 @@ install_wos_js() {
   info "Installing WOS JavaScript bot..."
   mkdir -p "$BOT_DIR"
   cd "$BOT_DIR"
-  git clone --depth 1 --branch "$BOT_JS_BRANCH" "$BOT_JS_REPO" src
+  git clone --depth 1 --branch "$BOT_JS_BRANCH" "$BOT_JS_REPO" src || error "Failed to clone ${BOT_JS_REPO}"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "${BOT_DIR}/src"
   cd "${BOT_DIR}/src"
-  sudo -u "$OS_USERNAME" npm install --silent
+  sudo -u "$OS_USERNAME" npm install --silent || error "npm install failed"
 
   # Update service
   cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF
@@ -118,10 +119,10 @@ install_kingshot() {
   info "Installing Kingshot bot..."
   mkdir -p "$BOT_DIR"
   cd "$BOT_DIR"
-  git clone --depth 1 --branch "$BOT_KINGSHOT_BRANCH" "$BOT_KINGSHOT_REPO" kingshot_src
+  git clone --depth 1 --branch "$BOT_KINGSHOT_BRANCH" "$BOT_KINGSHOT_REPO" kingshot_src || error "Failed to clone ${BOT_KINGSHOT_REPO}"
   cp -r kingshot_src/. .
   rm -rf kingshot_src
-  wget -q -O install.py "$BOT_INSTALL_PY"
+  wget -q -O install.py "$BOT_KINGSHOT_INSTALL_PY" || error "Failed to download Kingshot install.py from ${BOT_KINGSHOT_INSTALL_PY}"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$BOT_DIR"
   sudo -u "$OS_USERNAME" python3 -m venv "$VENV_DIR"
   sudo -u "$OS_USERNAME" "$VENV_DIR/bin/pip" install --quiet --upgrade pip
@@ -165,15 +166,15 @@ restore_token() {
 
 start_service() {
   info "Starting ${SERVICE_NAME}..."
-  systemctl daemon-reload
+  systemctl daemon-reload || true
   systemctl enable "$SERVICE_NAME" 2>/dev/null || true
-  systemctl start "$SERVICE_NAME"
+  systemctl start "$SERVICE_NAME" || true
   sleep 3
   STATUS=$(systemctl is-active "$SERVICE_NAME" || echo "unknown")
   if [ "$STATUS" = "active" ]; then
     info "${SERVICE_NAME} is running."
   else
-    warn "${SERVICE_NAME} status: ${STATUS}"
+    warn "${SERVICE_NAME} status: ${STATUS} — check: journalctl -u ${SERVICE_NAME} -n 20"
   fi
 }
 
