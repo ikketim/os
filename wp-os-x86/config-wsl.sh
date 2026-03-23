@@ -6,7 +6,7 @@
 
 # -- System identity -----------------------------------------
 OS_USERNAME="wp-os-user"
-OS_PASSWORD="wpur"
+OS_PASSWORD="wpusr"
 OS_HOSTNAME="wp-os-server"
 
 # -- Source repository ---------------------------------------
