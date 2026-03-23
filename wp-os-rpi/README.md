@@ -49,8 +49,8 @@ hostname -I
 
 | Method | Details |
 |---|---|
-| SSH | `ssh wp-os-user@<pi-ip>` — password: `wpur` |
-| VNC | `<pi-ip>:5900` — password: `wpur` |
+| SSH | `ssh wp-os-user@<pi-ip>` — password: `wpusr` |
+| VNC | `<pi-ip>:5900` — password: `wpusr` |
 | Web panel | `http://<pi-ip>:8080` |
 | Desktop | XFCE auto-login on the Pi's HDMI output |
 
@@ -119,7 +119,7 @@ wp-os-rpi/
 | Service | Default |
 |---|---|
 | SSH | `ssh wp-os-user@<pi-ip>` — port 22 |
-| VNC | `<pi-ip>:5900` — password: `wpur` |
+| VNC | `<pi-ip>:5900` — password: `wpusr` |
 | Web panel | `http://<pi-ip>:8080` |
 
 ---
