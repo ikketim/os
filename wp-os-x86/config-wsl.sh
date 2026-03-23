@@ -25,6 +25,9 @@ BOT_JS_BRANCH="main"
 BOT_KINGSHOT_REPO="https://github.com/kingshot-project/Kingshot-Discord-Bot"
 BOT_KINGSHOT_BRANCH="main"
 
+# Kingshot install script (separate from WOS installer)
+BOT_KINGSHOT_INSTALL_PY="https://raw.githubusercontent.com/kingshot-project/Kingshot-Discord-Bot/main/install/install.py"
+
 # Default bot on first install (wos-py | wos-js | kingshot)
 DEFAULT_BOT="wos-py"
 
