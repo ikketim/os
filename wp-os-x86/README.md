@@ -40,7 +40,7 @@ After reboot the system is fully configured. Log in via:
 | Method | Details |
 |---|---|
 | SSH | `ssh wp-os-user@<ip>` |
-| VNC | `<ip>:5900` — password: `wpur` |
+| VNC | `<ip>:5900` — password: `wpusr` |
 | Web panel | `http://<ip>:8080` |
 | Desktop | Auto-login at the console / XFCE session |
 
@@ -133,7 +133,7 @@ wp-os-x86/
 | Service | Default |
 |---|---|
 | SSH | `ssh wp-os-user@<ip>` — port 22 |
-| VNC | `<ip>:5900` — password: `wpur` |
+| VNC | `<ip>:5900` — password: `wpusr` |
 | Web panel | `http://<ip>:8080` |
 
 ---
