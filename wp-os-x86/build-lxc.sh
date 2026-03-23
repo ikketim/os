@@ -147,6 +147,7 @@ inject_and_run() {
     -e "s|@@BOT_JS_BRANCH@@|${BOT_JS_BRANCH}|g" \
     -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
     -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
+    -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
     -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
     -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
     -e "s|@@DESKTOP@@|${DESKTOP}|g" \
