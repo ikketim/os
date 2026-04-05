@@ -22,7 +22,13 @@ error() { echo -e "${RED}[ERR]${NC}    $*"; exit 1; }
 [ -z "${OS_PLATFORM:-}"  ] && error "OS_PLATFORM not set in /etc/wp-os/config.env"
 [ -z "${WEBSERVER_DIR:-}"] && error "WEBSERVER_DIR not set in /etc/wp-os/config.env"
 
+case "$OS_PLATFORM" in
+  rpi|x86) ;;
+  *) error "OS_PLATFORM must be 'rpi' or 'x86', got: ${OS_PLATFORM}" ;;
+esac
+
 SCRIPTS_URL="${REPO_BASE}/wp-os-${OS_PLATFORM}/rootfs-overlay/usr/local/bin"
+# app.py is shared between rpi and x86 -- always fetch from wp-os-x86
 WEBSERVER_URL="${REPO_BASE}/wp-os-x86/webserver"
 
 echo "========================================"

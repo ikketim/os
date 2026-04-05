@@ -312,6 +312,8 @@ def api_slot_install(slot_id):
             _write_json(meta_f, m)
         else:
             logging.warning("Install script for slot %s exited with rc=%d", slot_id, proc.returncode)
+        with _procs_lock:
+            _install_procs.pop(slot_id, None)
 
     threading.Thread(target=_wait, daemon=True).start()
     return jsonify({"ok": True, "log": log_file})
@@ -767,6 +769,7 @@ function showTab(id,btn){
   if(id==='system') loadSystem();
 }
 
+function esc(s){const d=document.createElement('span');d.textContent=s;return d.innerHTML}
 function badge(cls,text){return `<span class="badge badge-${cls}">${text}</span>`}
 function typeBadge(t){return badge(t,t)}
 function statusBadge(s){return badge(s,s)}
@@ -793,7 +796,7 @@ function slotCard(s){
     <span class="slot-id">${s.slot_id}</span>
     ${typeBadge(s.type)}
     ${statusBadge(s.service_status)}
-    <span class="slot-label">${s.label}</span>
+    <span class="slot-label">${esc(s.label)}</span>
     <span style="margin-left:auto;font-size:.78rem;color:${s.has_token?'#4ade80':'#ef4444'}">${s.token_mask}</span>
   </div>
   <div class="slot-actions">
