@@ -67,9 +67,8 @@ Open the web panel at `http://<pi-ip>:8080`, go to **Bot Token**, paste your tok
 **Via SSH:**
 ```bash
 ssh wp-os-user@<pi-ip>
-sudo /home/wp-os-user/update-token.sh YOUR_TOKEN
-# or interactively:
-sudo /home/wp-os-user/update-token.sh
+# Set token for a slot via the CLI manager:
+sudo wp-os-bot-manager.sh token-set wos-1 YOUR_TOKEN
 ```
 
 ---
@@ -105,7 +104,7 @@ The finished image is written to `output/wp-os-rpi-YYYYMMDD.img.xz`.
 wp-os-rpi/
 ├── config.sh                              Central configuration — edit this
 ├── build.sh                               Pi image builder
-├── update-token.sh                        Token update helper (run on the Pi)
+├── update-token.sh                        Token update helper (run on the build machine)
 └── rootfs-overlay/
     └── usr/local/bin/
         ├── wp-os-firstboot.sh           First-boot provisioning (runs once)

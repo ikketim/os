@@ -126,6 +126,7 @@ inject_and_run() {
     -e "s|@@BOTS_DIR@@|${BOTS_DIR}|g" \
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
+    -e "s|@@REPO_BASE@@|${REPO_BASE}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-provision.sh" \
     > "$PROVISION_TMP"
 
@@ -142,6 +143,9 @@ inject_and_run() {
   pct push "$CTID" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-manager.sh" \
     /usr/local/bin/wp-os-bot-manager.sh --perms 0755
+  pct push "$CTID" \
+    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-update.sh" \
+    /usr/local/bin/wp-os-update.sh --perms 0755
 
   # Push webserver
   pct exec "$CTID" -- mkdir -p "$WEBSERVER_DIR"

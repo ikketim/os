@@ -107,6 +107,7 @@ inject_autoinstall() {
     -e "s|@@BOTS_DIR@@|${BOTS_DIR}|g" \
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
+    -e "s|@@REPO_BASE@@|${REPO_BASE}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-provision.sh" \
     > "${PAYLOAD_DIR}/wp-os-provision.sh"
   chmod +x "${PAYLOAD_DIR}/wp-os-provision.sh"
@@ -122,6 +123,10 @@ inject_autoinstall() {
   cp "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-manager.sh" \
      "${PAYLOAD_DIR}/wp-os-bot-manager.sh"
   chmod +x "${PAYLOAD_DIR}/wp-os-bot-manager.sh"
+
+  cp "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-update.sh" \
+     "${PAYLOAD_DIR}/wp-os-update.sh"
+  chmod +x "${PAYLOAD_DIR}/wp-os-update.sh"
 
   cp "${SCRIPT_DIR}/webserver/app.py" "${PAYLOAD_DIR}/app.py"
   cp "${SCRIPT_DIR}/rootfs-overlay/etc/systemd/system/wp-os-firstboot.service" \
@@ -179,7 +184,7 @@ build_iso() {
 
   EFI_OFFSET=$(fdisk -l "$BASE_ISO" 2>/dev/null | awk '/EFI/ {print $2}')
   EFI_SIZE=$(fdisk -l "$BASE_ISO" 2>/dev/null | awk '/EFI/ {print $4}')
-  if [ -n "$EFI_OFFSET" ]; then
+  if [[ "$EFI_OFFSET" =~ ^[0-9]+$ ]] && [[ "$EFI_SIZE" =~ ^[0-9]+$ ]]; then
     dd if="$BASE_ISO" bs=512 skip="$EFI_OFFSET" count="$EFI_SIZE" of="$EFI_IMG" 2>/dev/null
   else
     warn "Could not extract EFI partition -- ISO may not be UEFI-bootable"

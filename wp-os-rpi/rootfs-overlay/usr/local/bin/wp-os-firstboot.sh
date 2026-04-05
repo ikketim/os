@@ -16,6 +16,7 @@ echo "========================================="
 OS_USERNAME="@@OS_USERNAME@@"
 OS_PASSWORD="@@OS_PASSWORD@@"
 OS_HOSTNAME="@@OS_HOSTNAME@@"
+REPO_BASE="@@REPO_BASE@@"
 BOT_MAIN_PY="@@BOT_MAIN_PY@@"
 BOT_INSTALL_PY="@@BOT_INSTALL_PY@@"
 BOT_JS_REPO="@@BOT_JS_REPO@@"
@@ -34,6 +35,13 @@ WEBSERVER_DIR="@@WEBSERVER_DIR@@"
 WEBSERVER_PORT="@@WEBSERVER_PORT@@"
 
 export DEBIAN_FRONTEND=noninteractive
+
+# -- Connectivity check
+echo "[NET] Checking internet connectivity..."
+if ! curl --silent --max-time 15 --output /dev/null https://deb.nodesource.com/ 2>/dev/null; then
+  echo "[WARN] Cannot reach deb.nodesource.com -- internet may be unavailable."
+  echo "[WARN] Node.js and package downloads may fail. Ensure the Pi has internet access."
+fi
 
 # -- 1. Hostname
 echo "[1/13] Setting hostname..."
@@ -156,6 +164,8 @@ BOT_VOICECHAT_REPO=${BOT_VOICECHAT_REPO}
 BOT_VOICECHAT_BRANCH=${BOT_VOICECHAT_BRANCH}
 WEBSERVER_DIR=${WEBSERVER_DIR}
 WEBSERVER_PORT=${WEBSERVER_PORT}
+REPO_BASE=${REPO_BASE}
+OS_PLATFORM=rpi
 EOF
 chmod 644 /etc/wp-os/config.env
 
@@ -194,7 +204,8 @@ chmod +x /usr/local/bin/wp-os-install-bot.sh
 
 # -- 11. SSH
 echo "[11/13] Configuring SSH..."
-systemctl enable ssh 2>/dev/null || systemctl enable openssh-server 2>/dev/null || true
+systemctl enable openssh-server 2>/dev/null || systemctl enable ssh 2>/dev/null || true
+cp -n /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 
