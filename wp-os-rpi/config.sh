@@ -47,30 +47,8 @@ WEBSERVER_PORT="8080"
 # -- Desktop environment -------------------------------------
 DESKTOP="xfce"
 
-# -- Ubuntu base for ISO builds ------------------------------
-UBUNTU_SERIES="24.04"
-UBUNTU_ISO_FILE="ubuntu-server-base.iso"
-
-resolve_ubuntu_iso_url() {
-  echo "Auto-detecting latest Ubuntu ${UBUNTU_SERIES} ISO..." >&2
-  local index_url="https://releases.ubuntu.com/${UBUNTU_SERIES}/"
-  local iso_name
-  iso_name=$(wget -qO- "$index_url" \
-    | grep -oP "ubuntu-[0-9]+\.[0-9]+\.[0-9]+-live-server-amd64\.iso" \
-    | grep -vE 'torrent|zsync' \
-    | sort -V | tail -1)
-  if [ -z "$iso_name" ]; then
-    echo "ERROR: Could not detect Ubuntu ${UBUNTU_SERIES} ISO from ${index_url}" >&2
-    exit 1
-  fi
-  echo "  -> ${iso_name}" >&2
-  echo "${index_url}${iso_name}"
-}
-
-# -- LXC template --------------------------------------------
-LXC_TEMPLATE="ubuntu-24.04-standard"
-
 # -- Ubuntu Pi image -----------------------------------------
+UBUNTU_SERIES="24.04"
 UBUNTU_IMAGE_FILE="ubuntu-raspi-base.img.xz"
 
 resolve_ubuntu_image_url() {

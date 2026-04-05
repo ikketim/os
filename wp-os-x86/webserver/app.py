@@ -56,6 +56,13 @@ def mask(token: str) -> str:
         return "[none]"
     return f"[....{token[-4:]}]"
 
+def _os_user_ids():
+    try:
+        pw = pwd.getpwnam(OS_USER)
+        return pw.pw_uid, pw.pw_gid
+    except KeyError:
+        return 0, 0
+
 def _read_json(path: Path, default):
     try:
         with open(path) as f:
@@ -111,7 +118,8 @@ def write_token(slot_id: str, token: str):
     p = BOTS_DIR / slot_id / "token.txt"
     p.write_text(token)
     os.chmod(p, 0o600)
-    os.chown(p, 0, 0)
+    uid, gid = _os_user_ids()
+    os.chown(p, uid, gid)
 
 def list_slots():
     slots = []
@@ -209,7 +217,8 @@ def api_slots_create():
     tok_f = slot_dir / "token.txt"
     tok_f.touch()
     os.chmod(tok_f, 0o600)
-    os.chown(tok_f, 0, 0)
+    uid, gid = _os_user_ids()
+    os.chown(tok_f, uid, gid)
 
     subprocess.run(["systemctl", "daemon-reload"], check=False)
     subprocess.run(["systemctl", "enable", f"wp-os-bot@{slot_id}"], check=False)
