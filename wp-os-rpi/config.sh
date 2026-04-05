@@ -49,7 +49,6 @@ DESKTOP="xfce"
 
 # -- Ubuntu Pi image -----------------------------------------
 UBUNTU_SERIES="24.04"
-UBUNTU_SERIES="24.04"
 UBUNTU_IMAGE_FILE="ubuntu-raspi-base.img.xz"
 
 resolve_ubuntu_image_url() {

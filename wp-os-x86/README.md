@@ -121,7 +121,9 @@ wp-os-x86/
 │   │   └── wp-os-firstboot.service      Runs wp-os-provision.sh on first boot
 │   └── usr/local/bin/
 │       ├── wp-os-provision.sh           Main provisioning script (templated)
-│       └── wp-os-switch-bot.sh          Bot-switching helper (templated)
+│       ├── wp-os-install-bot.sh         On-demand bot installer
+│       ├── wp-os-bot-start.sh           Bot service launcher
+│       └── wp-os-bot-manager.sh         CLI tool for token and slot management
 └── webserver/
     └── app.py                             Flask web control panel
 ```
@@ -136,6 +138,8 @@ wp-os-x86/
 | VNC | `<ip>:5900` — password: `wpusr` |
 | Web panel | `http://<ip>:8080` |
 
+> **Security:** The web panel and VNC are unencrypted. Keep ports 8080 and 5900 on a trusted local network only. Use SSH port-forwarding for remote access: `ssh -L 8080:localhost:8080 -L 5900:localhost:5900 wp-os-user@<ip>`
+
 ---
 
 ## Updating the Bot Token
@@ -145,7 +149,6 @@ wp-os-x86/
 **Via SSH:**
 ```bash
 ssh wp-os-user@<ip>
-# The web panel handles token updates -- or write directly:
-echo "YOUR_TOKEN" | sudo tee /home/wp-os-user/bot/bot_token.txt
-sudo systemctl restart wosbot
+# Set token for a slot via the CLI manager:
+sudo wp-os-bot-manager.sh token-set wos-1 YOUR_TOKEN
 ```

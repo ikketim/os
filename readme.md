@@ -47,6 +47,8 @@ WhiteoutProjectOS/
 
 > Change the password after first boot: `passwd wp-os-user`
 
+> **Security:** The web panel runs over plain HTTP and VNC is unencrypted. Do not expose port 8080 or 5900 to the public internet. Access them over a local network or via SSH port-forwarding (`ssh -L 8080:localhost:8080 wp-os-user@<ip>`).
+
 ---
 
 ## Web Control Panel

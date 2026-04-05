@@ -109,7 +109,9 @@ wp-os-rpi/
 └── rootfs-overlay/
     └── usr/local/bin/
         ├── wp-os-firstboot.sh           First-boot provisioning (runs once)
-        └── wp-os-switch-bot.sh          Bot-switching helper
+        ├── wp-os-install-bot.sh         On-demand bot installer
+        ├── wp-os-bot-start.sh           Bot service launcher
+        └── wp-os-bot-manager.sh         CLI tool for token and slot management
 ```
 
 ---
@@ -130,3 +132,4 @@ wp-os-rpi/
 - Default bot is `wos-py` (Whiteout Survival Python edition)
 - Switch bots via the web panel without reflashing
 - Change the default password after first boot: `passwd wp-os-user`
+- The web panel (`:8080`) and VNC (`:5900`) are **unencrypted**. Keep them on a trusted local network. Use SSH port-forwarding to access them securely from outside: `ssh -L 8080:localhost:8080 -L 5900:localhost:5900 wp-os-user@<pi-ip>`
