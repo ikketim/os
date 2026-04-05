@@ -2,7 +2,7 @@
 # ============================================================
 # WhiteoutProjectOS x86 -- ISO Builder (WSL2 variant)
 #
-# Run inside WSL2 (Ubuntu). Uses /mnt/c paths for output.
+# Run inside WSL2 (Ubuntu). Uses config-wsl.sh instead of config.sh.
 #
 # Requirements (inside WSL2):
 #   sudo apt install xorriso wget openssl p7zip-full
@@ -20,12 +20,18 @@ WORK_DIR="${SCRIPT_DIR}/build-tmp/iso"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
 BASE_ISO="${SCRIPT_DIR}/build-tmp/${UBUNTU_ISO_FILE}"
 FINAL_ISO="${OUTPUT_DIR}/wp-os-x86-$(date +%Y%m%d).iso"
+EXTRACT_DIR="${WORK_DIR}/iso-extract"
 CUSTOM_DIR="${WORK_DIR}/iso-custom"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[ISO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERR]${NC}  $*"; exit 1; }
+
+cleanup() {
+  umount "${EXTRACT_DIR}" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 check_deps() {
   info "Checking dependencies..."
@@ -91,42 +97,40 @@ inject_autoinstall() {
     -e "s|@@BOT_JS_BRANCH@@|${BOT_JS_BRANCH}|g" \
     -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
     -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
+    -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
+    -e "s|@@BOT_VOICECHAT_REPO@@|${BOT_VOICECHAT_REPO}|g" \
+    -e "s|@@BOT_VOICECHAT_BRANCH@@|${BOT_VOICECHAT_BRANCH}|g" \
     -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
+    -e "s|@@DEFAULT_BOT_LABEL@@|${DEFAULT_BOT_LABEL}|g" \
     -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
     -e "s|@@DESKTOP@@|${DESKTOP}|g" \
-    -e "s|@@BOT_DIR@@|${BOT_DIR}|g" \
-    -e "s|@@VENV_DIR@@|${VENV_DIR}|g" \
-    -e "s|@@SERVICE_NAME@@|${SERVICE_NAME}|g" \
-    -e "s|@@TOKEN_FILE@@|${TOKEN_FILE}|g" \
+    -e "s|@@BOTS_DIR@@|${BOTS_DIR}|g" \
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-provision.sh" \
     > "${PAYLOAD_DIR}/wp-os-provision.sh"
   chmod +x "${PAYLOAD_DIR}/wp-os-provision.sh"
 
-  sed \
-    -e "s|@@OS_USERNAME@@|${OS_USERNAME}|g" \
-    -e "s|@@BOT_DIR@@|${BOT_DIR}|g" \
-    -e "s|@@VENV_DIR@@|${VENV_DIR}|g" \
-    -e "s|@@SERVICE_NAME@@|${SERVICE_NAME}|g" \
-    -e "s|@@TOKEN_FILE@@|${TOKEN_FILE}|g" \
-    -e "s|@@BOT_MAIN_PY@@|${BOT_MAIN_PY}|g" \
-    -e "s|@@BOT_INSTALL_PY@@|${BOT_INSTALL_PY}|g" \
-    -e "s|@@BOT_JS_REPO@@|${BOT_JS_REPO}|g" \
-    -e "s|@@BOT_JS_BRANCH@@|${BOT_JS_BRANCH}|g" \
-    -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
-    -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
-    -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
-    -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
-    -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
-    -e "s|@@DESKTOP@@|${DESKTOP}|g" \
-    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-switch-bot.sh" \
-    > "${PAYLOAD_DIR}/wp-os-switch-bot.sh"
-  chmod +x "${PAYLOAD_DIR}/wp-os-switch-bot.sh"
+  cp "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-install-bot.sh" \
+     "${PAYLOAD_DIR}/wp-os-install-bot.sh"
+  chmod +x "${PAYLOAD_DIR}/wp-os-install-bot.sh"
+
+  cp "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-start.sh" \
+     "${PAYLOAD_DIR}/wp-os-bot-start.sh"
+  chmod +x "${PAYLOAD_DIR}/wp-os-bot-start.sh"
+
+  cp "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-manager.sh" \
+     "${PAYLOAD_DIR}/wp-os-bot-manager.sh"
+  chmod +x "${PAYLOAD_DIR}/wp-os-bot-manager.sh"
 
   cp "${SCRIPT_DIR}/webserver/app.py" "${PAYLOAD_DIR}/app.py"
   cp "${SCRIPT_DIR}/rootfs-overlay/etc/systemd/system/wp-os-firstboot.service" \
      "${PAYLOAD_DIR}/wp-os-firstboot.service"
+
+  info "Downloading GRUB background image..."
+  mkdir -p "${CUSTOM_DIR}/boot/grub"
+  wget -q -O "${CUSTOM_DIR}/boot/grub/wp-os.png" "$BACKGROUND_IMAGE_URL" || \
+    warn "Could not download GRUB background image -- continuing without it"
 }
 
 patch_grub() {
@@ -135,19 +139,34 @@ patch_grub() {
   GRUB_CFG="${CUSTOM_DIR}/boot/grub/grub.cfg"
   [ -f "$GRUB_CFG" ] || GRUB_CFG="${CUSTOM_DIR}/grub/grub.cfg"
 
-  AUTOINSTALL_ENTRY='
+  BG_GRUB=""
+  if [ -f "${CUSTOM_DIR}/boot/grub/wp-os.png" ]; then
+    BG_GRUB="background_image /boot/grub/wp-os.png"
+  fi
+
+  cp "$GRUB_CFG" "${GRUB_CFG}.orig"
+
+  cat > "$GRUB_CFG" <<EOF
 set default="0"
-set timeout=5
+set timeout=10
+set gfxmode=auto
+insmod gfxterm
+insmod png
+terminal_output gfxterm
+${BG_GRUB}
 
 menuentry "WhiteoutProjectOS -- Automated Install" {
     set gfxpayload=keep
     linux   /casper/vmlinuz quiet autoinstall "ds=nocloud;s=/cdrom/autoinstall/" ---
     initrd  /casper/initrd
 }
-'
-  cp "$GRUB_CFG" "${GRUB_CFG}.orig"
-  echo "$AUTOINSTALL_ENTRY" | cat - "$GRUB_CFG" > /tmp/grub_new.cfg
-  mv /tmp/grub_new.cfg "$GRUB_CFG"
+
+menuentry "WhiteoutProjectOS -- Manual Install (Safe Mode)" {
+    set gfxpayload=keep
+    linux   /casper/vmlinuz quiet ---
+    initrd  /casper/initrd
+}
+EOF
 }
 
 build_iso() {
@@ -195,19 +214,20 @@ build_iso() {
   fi
 
   echo ""
-  echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║  WhiteoutProjectOS x86 ISO built successfully! (WSL2)        ║${NC}"
-  echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
+  echo -e "${GREEN}â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—${NC}"
+  echo -e "${GREEN}â•‘  WhiteoutProjectOS x86 ISO built successfully!       â•‘${NC}"
+  echo -e "${GREEN}â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
   echo ""
   echo -e "  ISO  : ${YELLOW}${FINAL_ISO}${NC}  ($(du -sh "$FINAL_ISO" | cut -f1))"
+  echo -e "  Flash: ${YELLOW}sudo dd if=${FINAL_ISO} of=/dev/sdX bs=4M status=progress${NC}"
   echo ""
 }
 
 main() {
   echo ""
-  echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║     WhiteoutProjectOS x86 ISO Builder (WSL2)                 ║${NC}"
-  echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
+  echo -e "${GREEN}â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—${NC}"
+  echo -e "${GREEN}â•‘     WhiteoutProjectOS x86 ISO Builder (WSL2)         â•‘${NC}"
+  echo -e "${GREEN}â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"
   echo ""
   check_deps
   download_iso "${1:-}"

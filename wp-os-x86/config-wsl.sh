@@ -24,21 +24,23 @@ BOT_JS_BRANCH="main"
 # Kingshot bot
 BOT_KINGSHOT_REPO="https://github.com/kingshot-project/Kingshot-Discord-Bot"
 BOT_KINGSHOT_BRANCH="main"
-
-# Kingshot install script (separate from WOS installer)
 BOT_KINGSHOT_INSTALL_PY="https://raw.githubusercontent.com/kingshot-project/Kingshot-Discord-Bot/main/install/install.py"
 
-# Default bot on first install (wos-py | wos-js | kingshot)
+# WOS VoiceChat Counter bot
+BOT_VOICECHAT_REPO="https://github.com/ikketimnl/wos-voicechat-counter"
+BOT_VOICECHAT_BRANCH="main"
+
+# Default bot type on first install (wos-py | wos-js | kingshot | voicechat)
 DEFAULT_BOT="wos-py"
 
+# Label for the default pre-installed bot slot
+DEFAULT_BOT_LABEL="WOS Bot"
+
 # -- Background image ----------------------------------------
-BACKGROUND_IMAGE_URL="${REPO_BASE}/WhiteoutProjectOS/etc/wp-os.png"
+BACKGROUND_IMAGE_URL="${REPO_BASE}/etc/wp-os.png"
 
 # -- Install paths (on the target machine) -------------------
-BOT_DIR="/home/${OS_USERNAME}/bot"
-VENV_DIR="${BOT_DIR}/venv"
-SERVICE_NAME="wosbot"
-TOKEN_FILE="${BOT_DIR}/bot_token.txt"
+BOTS_DIR="/home/${OS_USERNAME}/bots"
 WEBSERVER_DIR="/opt/wp-os-webserver"
 WEBSERVER_PORT="8080"
 
@@ -64,6 +66,3 @@ resolve_ubuntu_iso_url() {
   echo "  -> ${iso_name}" >&2
   echo "${index_url}${iso_name}"
 }
-
-# -- LXC template --------------------------------------------
-LXC_TEMPLATE="ubuntu-24.04-standard"

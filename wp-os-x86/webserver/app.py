@@ -63,6 +63,13 @@ def _os_user_ids():
     except KeyError:
         return 0, 0
 
+def _os_user_ids():
+    try:
+        pw = pwd.getpwnam(OS_USER)
+        return pw.pw_uid, pw.pw_gid
+    except KeyError:
+        return 0, 0
+
 def _read_json(path: Path, default):
     try:
         with open(path) as f:
