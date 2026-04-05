@@ -9,6 +9,7 @@ source /etc/wp-os/config.env 2>/dev/null || true
 
 SLOT_ID="${1:-}"
 [ -z "$SLOT_ID" ] && { echo "ERROR: slot-id required" >&2; exit 1; }
+[[ "$SLOT_ID" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "ERROR: invalid slot-id: ${SLOT_ID}" >&2; exit 1; }
 
 SLOT_DIR="${BOTS_DIR}/${SLOT_ID}"
 META="${SLOT_DIR}/.meta.json"
@@ -20,6 +21,7 @@ APP_DIR="${SLOT_DIR}/app"
 
 BOT_TYPE=$(jq -r '.type'  "$META" 2>/dev/null \
   || grep -o '"type":"[^"]*"' "$META" | head -1 | cut -d'"' -f4)
+[ -z "$BOT_TYPE" ] && { echo "ERROR: could not determine bot type from ${META}" >&2; exit 1; }
 LABEL=$(jq    -r '.label' "$META" 2>/dev/null || echo "$SLOT_ID")
 TOKEN=$(cat "$TOKEN_FILE" 2>/dev/null || true)
 
@@ -57,18 +59,10 @@ case "$BOT_TYPE" in
       CLIENT_ID=$(jq -r '.client_id // empty' "$EXTRA" 2>/dev/null || true)
       GUILD_ID=$(jq  -r '.guild_id  // empty' "$EXTRA" 2>/dev/null || true)
     fi
-    # Write .env (dotenv style)
-    {
-      printf 'DISCORD_TOKEN=%s\n' "$TOKEN"
-      [ -n "$CLIENT_ID" ] && printf 'DISCORD_CLIENT_ID=%s\n' "$CLIENT_ID"
-      [ -n "$GUILD_ID"  ] && printf 'DISCORD_GUILD_ID=%s\n'  "$GUILD_ID"
-    } > "${APP_DIR}/.env"
-    chmod 600 "${APP_DIR}/.env"
-    # Write config/config.json (format used by setup.js)
-    mkdir -p "${APP_DIR}/config"
-    printf '{"token":"%s","clientId":"%s","guildId":"%s"}\n' \
-      "$TOKEN" "$CLIENT_ID" "$GUILD_ID" > "${APP_DIR}/config/config.json"
-    chmod 600 "${APP_DIR}/config/config.json"
+    # Write config.json at repo root (required by wos-voicechat-counter)
+    jq -n --arg token "$TOKEN" --arg clientId "$CLIENT_ID" --arg guildId "$GUILD_ID" \
+      '{"token":$token,"clientId":$clientId,"guildId":$guildId}' > "${APP_DIR}/config.json"
+    chmod 600 "${APP_DIR}/config.json"
     exec /usr/bin/node "${APP_DIR}/index.js"
     ;;
 

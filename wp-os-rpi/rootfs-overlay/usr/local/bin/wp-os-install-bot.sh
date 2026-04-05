@@ -19,6 +19,8 @@ SLOT_ID="${1:-}"
 BOT_TYPE="${2:-}"
 [ -z "$SLOT_ID" ]  && error "Usage: $0 <slot-id> <bot-type>"
 [ -z "$BOT_TYPE" ] && error "Usage: $0 <slot-id> <bot-type>"
+[[ "$SLOT_ID"  =~ ^[a-zA-Z0-9_-]+$ ]] || error "Invalid slot ID: ${SLOT_ID}"
+[[ "$BOT_TYPE" =~ ^[a-zA-Z0-9_-]+$ ]] || error "Invalid bot type: ${BOT_TYPE}"
 
 SLOT_DIR="${BOTS_DIR}/${SLOT_ID}"
 APP_DIR="${SLOT_DIR}/app"

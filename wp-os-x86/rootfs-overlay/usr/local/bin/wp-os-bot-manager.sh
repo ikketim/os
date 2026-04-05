@@ -24,6 +24,7 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERR]${NC}  $*"; exit 1; }
 
 sha256t() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+validate_slot_id() { [[ "$1" =~ ^[a-zA-Z0-9_-]+$ ]] || error "Invalid slot ID: ${1}"; }
 
 registry_find() {
   [ -f "$REGISTRY" ] \
@@ -70,6 +71,7 @@ cmd_list() {
 
 cmd_token_set() {
   local sid="$1" tok="$2"
+  validate_slot_id "$sid"
   [ -d "${BOTS_DIR}/${sid}" ] || error "Slot not found: ${sid}"
   [ -z "$tok" ] && error "Token cannot be empty"
   local h; h=$(sha256t "$tok")
@@ -85,6 +87,7 @@ cmd_token_set() {
 
 cmd_token_clear() {
   local sid="$1"
+  validate_slot_id "$sid"
   [ -d "${BOTS_DIR}/${sid}" ] || error "Slot not found: ${sid}"
   local old; old=$(token_read "$sid")
   [ -n "$old" ] && registry_del "$(sha256t "$old")"
@@ -95,6 +98,8 @@ cmd_token_clear() {
 
 cmd_token_migrate() {
   local src="$1" dst="$2"
+  validate_slot_id "$src"
+  validate_slot_id "$dst"
   local tok; tok=$(token_read "$src")
   [ -z "$tok" ] && error "No token on source slot ${src}"
   [ -d "${BOTS_DIR}/${dst}" ] || error "Destination slot not found: ${dst}"
@@ -113,11 +118,13 @@ cmd_token_migrate() {
 
 cmd_slot_create() {
   local sid="$1" type="$2" label="$3"
+  validate_slot_id "$sid"
   [ -d "${BOTS_DIR}/${sid}" ] && error "Slot already exists: ${sid}"
   mkdir -p "${BOTS_DIR}/${sid}/app"
   local now; now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  printf '{"type":"%s","label":"%s","created":"%s","installed":false}\n' \
-    "$type" "$label" "$now" > "${BOTS_DIR}/${sid}/.meta.json"
+  jq -n --arg type "$type" --arg label "$label" --arg created "$now" \
+    '{"type":$type,"label":$label,"created":$created,"installed":false}' \
+    > "${BOTS_DIR}/${sid}/.meta.json"
   chmod 644 "${BOTS_DIR}/${sid}/.meta.json"
   chown root:root "${BOTS_DIR}/${sid}/.meta.json"
   touch "${BOTS_DIR}/${sid}/token.txt"
@@ -133,6 +140,7 @@ cmd_slot_create() {
 
 cmd_slot_remove() {
   local sid="$1"
+  validate_slot_id "$sid"
   [ -d "${BOTS_DIR}/${sid}" ] || error "Slot not found: ${sid}"
   local old; old=$(token_read "$sid")
   [ -n "$old" ] && registry_del "$(sha256t "$old")"
@@ -144,6 +152,7 @@ cmd_slot_remove() {
 
 cmd_slot_label() {
   local sid="$1" lbl="$2"
+  validate_slot_id "$sid"
   local m="${BOTS_DIR}/${sid}/.meta.json"
   [ -f "$m" ] || error "Slot not found: ${sid}"
   local tmp; tmp=$(mktemp "${m}.XXXXXX")
