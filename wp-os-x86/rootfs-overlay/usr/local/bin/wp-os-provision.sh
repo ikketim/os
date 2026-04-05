@@ -197,8 +197,8 @@ esac
 SLOT_DIR="${BOTS_DIR}/${DEFAULT_SLOT_ID}"
 mkdir -p "${SLOT_DIR}/app"
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-printf '{"type":"%s","label":"%s","created":"%s","installed":false}\n' \
-  "${DEFAULT_BOT}" "${DEFAULT_BOT_LABEL}" "${NOW}" > "${SLOT_DIR}/.meta.json"
+jq -n --arg type "${DEFAULT_BOT}" --arg label "${DEFAULT_BOT_LABEL}" --arg created "${NOW}" \
+  '{"type":$type,"label":$label,"created":$created,"installed":false}' > "${SLOT_DIR}/.meta.json"
 touch "${SLOT_DIR}/token.txt"
 chmod 644 "${SLOT_DIR}/.meta.json"
 chmod 600 "${SLOT_DIR}/token.txt"
