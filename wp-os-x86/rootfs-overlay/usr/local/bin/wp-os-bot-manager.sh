@@ -31,12 +31,12 @@ registry_find() {
     || true
 }
 registry_set() {
-  local tmp; tmp=$(mktemp)
+  local tmp; tmp=$(mktemp "${REGISTRY}.XXXXXX")
   jq --arg h "$1" --arg s "$2" '.tokens[$h]=$s' "$REGISTRY" > "$tmp"
   mv "$tmp" "$REGISTRY"; chmod 600 "$REGISTRY"; chown root:root "$REGISTRY"
 }
 registry_del() {
-  local tmp; tmp=$(mktemp)
+  local tmp; tmp=$(mktemp "${REGISTRY}.XXXXXX")
   jq --arg h "$1" 'del(.tokens[$h])' "$REGISTRY" > "$tmp"
   mv "$tmp" "$REGISTRY"; chmod 600 "$REGISTRY"; chown root:root "$REGISTRY"
 }
@@ -146,7 +146,7 @@ cmd_slot_label() {
   local sid="$1" lbl="$2"
   local m="${BOTS_DIR}/${sid}/.meta.json"
   [ -f "$m" ] || error "Slot not found: ${sid}"
-  local tmp; tmp=$(mktemp)
+  local tmp; tmp=$(mktemp "${m}.XXXXXX")
   jq --arg l "$lbl" '.label=$l' "$m" > "$tmp" && mv "$tmp" "$m"
   chmod 644 "$m"; chown root:root "$m"
   ok "Label updated to '${lbl}'"

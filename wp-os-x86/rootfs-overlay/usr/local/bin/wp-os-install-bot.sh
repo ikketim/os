@@ -32,7 +32,9 @@ install_wos_py() {
   chown "${OS_USERNAME}:${OS_USERNAME}" main.py install.py
   sudo -u "$OS_USERNAME" python3 -m venv "${APP_DIR}/venv"
   sudo -u "$OS_USERNAME" "${APP_DIR}/venv/bin/pip" install --quiet --upgrade pip
-  sudo -u "$OS_USERNAME" "${APP_DIR}/venv/bin/python3" install.py || true
+  if ! sudo -u "$OS_USERNAME" "${APP_DIR}/venv/bin/python3" install.py; then
+    warn "Dependency installation had errors -- bot may not function correctly"
+  fi
   rm -f install.py
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
 }
@@ -58,7 +60,9 @@ install_kingshot() {
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
   sudo -u "$OS_USERNAME" python3 -m venv "${APP_DIR}/venv"
   sudo -u "$OS_USERNAME" "${APP_DIR}/venv/bin/pip" install --quiet --upgrade pip
-  sudo -u "$OS_USERNAME" "${APP_DIR}/venv/bin/python3" install.py || true
+  if ! sudo -u "$OS_USERNAME" "${APP_DIR}/venv/bin/python3" install.py; then
+    warn "Dependency installation had errors -- bot may not function correctly"
+  fi
   rm -f install.py
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
 }
@@ -83,10 +87,14 @@ esac
 
 # Mark as installed in meta.json
 META="${SLOT_DIR}/.meta.json"
-if [ -f "$META" ] && command -v jq &>/dev/null; then
-  TMP=$(mktemp)
-  jq '.installed = true' "$META" > "$TMP" && mv "$TMP" "$META"
-  chmod 644 "$META"; chown root:root "$META"
+if [ -f "$META" ]; then
+  if command -v jq &>/dev/null; then
+    TMP=$(mktemp)
+    jq '.installed = true' "$META" > "$TMP" && mv "$TMP" "$META"
+    chmod 644 "$META"; chown root:root "$META"
+  else
+    warn "jq not found -- cannot update .meta.json installed flag"
+  fi
 fi
 
 systemctl daemon-reload 2>/dev/null || true

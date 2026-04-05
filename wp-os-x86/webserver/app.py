@@ -5,6 +5,7 @@ Serves on PORT env var (default 8080). Run as root.
 """
 import hashlib
 import json
+import logging
 import os
 import pwd
 import re
@@ -72,6 +73,8 @@ def _read_json(path: Path, default):
         return default
 
 _json_lock = threading.Lock()
+_procs_lock = threading.Lock()
+_registry_lock = threading.Lock()  # Serialises read-modify-write on registry/vault
 
 def _write_json(path: Path, data):
     tmp = str(path) + ".tmp"
@@ -105,10 +108,13 @@ def svc_status(slot_id: str) -> str:
         return "unknown"
 
 def svc_run(action: str, slot_id: str):
-    subprocess.run(
+    r = subprocess.run(
         ["systemctl", action, f"wp-os-bot@{slot_id}"],
-        timeout=10, check=False
+        capture_output=True, text=True, timeout=10, check=False
     )
+    if r.returncode != 0:
+        logging.warning("systemctl %s wp-os-bot@%s failed (rc=%d): %s",
+                        action, slot_id, r.returncode, r.stderr.strip())
 
 def read_token(slot_id: str) -> str:
     try:
@@ -118,7 +124,11 @@ def read_token(slot_id: str) -> str:
 
 def write_token(slot_id: str, token: str):
     p = BOTS_DIR / slot_id / "token.txt"
-    p.write_text(token)
+    tmp = str(p) + ".tmp"
+    with _json_lock:
+        with open(tmp, "w") as f:
+            f.write(token)
+        os.replace(tmp, p)
     os.chmod(p, 0o600)
     uid, gid = _os_user_ids()
     os.chown(p, uid, gid)
@@ -213,7 +223,7 @@ def api_slots_create():
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     meta = {"type": bot_type, "label": label, "created": now, "installed": False}
     meta_f = slot_dir / ".meta.json"
-    meta_f.write_text(json.dumps(meta))
+    _write_json(meta_f, meta)
     os.chmod(meta_f, 0o644)
     os.chown(meta_f, 0, 0)
     tok_f = slot_dir / "token.txt"
@@ -222,8 +232,14 @@ def api_slots_create():
     uid, gid = _os_user_ids()
     os.chown(tok_f, uid, gid)
 
-    subprocess.run(["systemctl", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "enable", f"wp-os-bot@{slot_id}"], check=False)
+    for cmd, timeout in [
+        (["systemctl", "daemon-reload"], 30),
+        (["systemctl", "enable", f"wp-os-bot@{slot_id}"], 10),
+    ]:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+        if r.returncode != 0:
+            logging.warning("systemctl command failed %s (rc=%d): %s",
+                            cmd, r.returncode, r.stderr.strip())
 
     return jsonify({"ok": True, "slot_id": slot_id, "warnings": warnings})
 
@@ -235,13 +251,17 @@ def api_slots_remove(slot_id):
 
     tok = read_token(slot_id)
     if tok:
-        reg = registry_get()
-        h = sha256t(tok)
-        reg["tokens"].pop(h, None)
-        registry_save(reg)
+        with _registry_lock:
+            reg = registry_get()
+            reg["tokens"].pop(sha256t(tok), None)
+            registry_save(reg)
 
-    subprocess.run(["systemctl", "stop",    f"wp-os-bot@{slot_id}"], check=False)
-    subprocess.run(["systemctl", "disable", f"wp-os-bot@{slot_id}"], check=False)
+    for action in ("stop", "disable"):
+        r = subprocess.run(["systemctl", action, f"wp-os-bot@{slot_id}"],
+                           capture_output=True, text=True, timeout=10, check=False)
+        if r.returncode != 0:
+            logging.warning("systemctl %s wp-os-bot@%s failed (rc=%d): %s",
+                            action, slot_id, r.returncode, r.stderr.strip())
 
     shutil.rmtree(slot_dir, ignore_errors=True)
     return jsonify({"ok": True})
@@ -272,16 +292,16 @@ def api_slot_install(slot_id):
         return jsonify({"error": "No type in meta.json"}), 400
     if bot_type not in API_GROUPS:
         return jsonify({"error": f"Unknown bot type in meta.json: {bot_type}"}), 400
-    if slot_id in _install_procs and _install_procs[slot_id].poll() is None:
-        return jsonify({"error": "Install already running"}), 400
-
     log_file = f"/tmp/wp-os-install-{slot_id}.log"
-    with open(log_file, "w") as lf:
-        proc = subprocess.Popen(
-            [INSTALL_SCRIPT, slot_id, bot_type],
-            stdout=lf, stderr=subprocess.STDOUT
-        )
-    _install_procs[slot_id] = proc
+    with _procs_lock:
+        if slot_id in _install_procs and _install_procs[slot_id].poll() is None:
+            return jsonify({"error": "Install already running"}), 400
+        with open(log_file, "w") as lf:
+            proc = subprocess.Popen(
+                [INSTALL_SCRIPT, slot_id, bot_type],
+                stdout=lf, stderr=subprocess.STDOUT
+            )
+        _install_procs[slot_id] = proc
 
     def _wait():
         proc.wait()
@@ -289,9 +309,9 @@ def api_slot_install(slot_id):
             meta_f = slot_dir / ".meta.json"
             m = _read_json(meta_f, {})
             m["installed"] = True
-            meta_f.write_text(json.dumps(m))
-            os.chmod(meta_f, 0o644)
-            os.chown(meta_f, 0, 0)
+            _write_json(meta_f, m)
+        else:
+            logging.warning("Install script for slot %s exited with rc=%d", slot_id, proc.returncode)
 
     threading.Thread(target=_wait, daemon=True).start()
     return jsonify({"ok": True, "log": log_file})
@@ -302,7 +322,8 @@ def api_slot_status(slot_id):
     if not slot_dir.exists():
         return jsonify({"error": "Slot not found"}), 404
     meta = _read_json(slot_dir / ".meta.json", {})
-    installing = slot_id in _install_procs and _install_procs[slot_id].poll() is None
+    with _procs_lock:
+        installing = slot_id in _install_procs and _install_procs[slot_id].poll() is None
     return jsonify({
         "installed": meta.get("installed", False),
         "service_status": svc_status(slot_id),
@@ -358,19 +379,20 @@ def api_token_set():
     if not (BOTS_DIR / slot_id).exists():
         return jsonify({"error": "Slot not found"}), 404
 
-    h = sha256t(token)
-    reg = registry_get()
-    existing = reg["tokens"].get(h)
-    if existing and existing != slot_id:
-        return jsonify({"error": f"Token already in use by slot: {existing}"}), 400
+    with _registry_lock:
+        h = sha256t(token)
+        reg = registry_get()
+        existing = reg["tokens"].get(h)
+        if existing and existing != slot_id:
+            return jsonify({"error": f"Token already in use by slot: {existing}"}), 400
 
-    old = read_token(slot_id)
-    if old:
-        reg["tokens"].pop(sha256t(old), None)
+        old = read_token(slot_id)
+        if old:
+            reg["tokens"].pop(sha256t(old), None)
 
-    write_token(slot_id, token)
-    reg["tokens"][h] = slot_id
-    registry_save(reg)
+        write_token(slot_id, token)
+        reg["tokens"][h] = slot_id
+        registry_save(reg)
     svc_run("restart", slot_id)
     return jsonify({"ok": True})
 
@@ -380,12 +402,13 @@ def api_token_clear():
     slot_id = data.get("slot_id", "").strip()
     if not slot_id:
         return jsonify({"error": "slot_id required"}), 400
-    old = read_token(slot_id)
-    if old:
-        reg = registry_get()
-        reg["tokens"].pop(sha256t(old), None)
-        registry_save(reg)
-    write_token(slot_id, "")
+    with _registry_lock:
+        old = read_token(slot_id)
+        if old:
+            reg = registry_get()
+            reg["tokens"].pop(sha256t(old), None)
+            registry_save(reg)
+        write_token(slot_id, "")
     svc_run("stop", slot_id)
     return jsonify({"ok": True})
 
@@ -402,20 +425,21 @@ def api_token_migrate():
     if not (BOTS_DIR / dst).exists():
         return jsonify({"error": f"Destination slot not found: {dst}"}), 404
 
-    h = sha256t(tok)
-    reg = registry_get()
-    existing = reg["tokens"].get(h)
-    if existing and existing != src:
-        return jsonify({"error": f"Token already in use by: {existing}"}), 400
+    with _registry_lock:
+        h = sha256t(tok)
+        reg = registry_get()
+        existing = reg["tokens"].get(h)
+        if existing and existing != src:
+            return jsonify({"error": f"Token already in use by: {existing}"}), 400
 
-    dst_old = read_token(dst)
-    if dst_old:
-        reg["tokens"].pop(sha256t(dst_old), None)
+        dst_old = read_token(dst)
+        if dst_old:
+            reg["tokens"].pop(sha256t(dst_old), None)
 
-    write_token(dst, tok)
-    reg["tokens"][h] = dst
-    write_token(src, "")
-    registry_save(reg)
+        write_token(dst, tok)
+        reg["tokens"][h] = dst
+        write_token(src, "")
+        registry_save(reg)
     svc_run("stop", src)
     svc_run("restart", dst)
     return jsonify({"ok": True})
@@ -475,22 +499,23 @@ def api_vault_assign():
     if not token:
         return jsonify({"error": "Token not found in vault"}), 404
 
-    h = sha256t(token)
-    reg = registry_get()
-    existing = reg["tokens"].get(h)
-    if existing and existing != slot_id:
-        return jsonify({"error": f"Token already in use by slot: {existing}"}), 400
+    with _registry_lock:
+        h = sha256t(token)
+        reg = registry_get()
+        existing = reg["tokens"].get(h)
+        if existing and existing != slot_id:
+            return jsonify({"error": f"Token already in use by slot: {existing}"}), 400
 
-    old = read_token(slot_id)
-    if old:
-        reg["tokens"].pop(sha256t(old), None)
+        old = read_token(slot_id)
+        if old:
+            reg["tokens"].pop(sha256t(old), None)
 
-    write_token(slot_id, token)
-    reg["tokens"][h] = slot_id
-    registry_save(reg)
+        write_token(slot_id, token)
+        reg["tokens"][h] = slot_id
+        registry_save(reg)
 
-    v["tokens"] = [e for e in v["tokens"] if sha256t(e.get("token","")) != token_hash]
-    vault_save(v)
+        v["tokens"] = [e for e in v["tokens"] if sha256t(e.get("token","")) != token_hash]
+        vault_save(v)
 
     svc_run("restart", slot_id)
     return jsonify({"ok": True})
@@ -545,6 +570,42 @@ def api_restart_all():
                 svc_run("restart", d.name)
                 restarted.append(d.name)
     return jsonify({"ok": True, "restarted": restarted})
+
+UPDATE_SCRIPT = "/usr/local/bin/wp-os-update.sh"
+UPDATE_LOG    = "/tmp/wp-os-update.log"
+_update_lock  = threading.Lock()
+_update_proc  = None
+
+@app.route("/api/system/update", methods=["POST"])
+def api_system_update():
+    global _update_proc
+    if not Path(UPDATE_SCRIPT).exists():
+        return jsonify({"error": "Update script not found"}), 500
+    with _update_lock:
+        if _update_proc is not None and _update_proc.poll() is None:
+            return jsonify({"error": "Update already running"}), 400
+        with open(UPDATE_LOG, "w") as lf:
+            _update_proc = subprocess.Popen(
+                [UPDATE_SCRIPT],
+                stdout=lf, stderr=subprocess.STDOUT
+            )
+    def _wait():
+        _update_proc.wait()
+        if _update_proc.returncode != 0:
+            logging.warning("Update script exited with rc=%d", _update_proc.returncode)
+    threading.Thread(target=_wait, daemon=True).start()
+    return jsonify({"ok": True, "log": UPDATE_LOG})
+
+@app.route("/api/system/update-log", methods=["GET"])
+def api_system_update_log():
+    running = _update_proc is not None and _update_proc.poll() is None
+    try:
+        with open(UPDATE_LOG) as f:
+            lines = f.readlines()
+        n = int(request.args.get("n", 100))
+        return jsonify({"lines": [l.rstrip() for l in lines[-n:]], "running": running})
+    except FileNotFoundError:
+        return jsonify({"lines": [], "running": running})
 
 # ---------------------------------------------------------------------------
 # SPA
@@ -685,6 +746,12 @@ tr:last-child td{border-bottom:none}
   </table></div>
   <div class="section-title">Setup Log (last 50 lines)</div>
   <div class="log-box" id="sys-log"></div>
+  <div style="display:flex;align-items:center;gap:12px;margin:18px 0 10px">
+    <div class="section-title" style="margin:0">OS Update</div>
+    <button class="btn-primary btn-sm" id="update-btn" onclick="runUpdate()">Check &amp; Apply Updates</button>
+  </div>
+  <div id="update-msg"></div>
+  <div class="log-box" id="update-log" style="display:none;margin-top:8px"></div>
 </div>
 
 <script>
@@ -901,6 +968,42 @@ async function restartAll(){
   const r=await api('POST','/system/restart-all');
   alert(`Restarted: ${(r.restarted||[]).join(', ')||'none'}`);
   loadSystem();
+}
+
+let _updatePoll = null;
+
+async function runUpdate(){
+  const btn=document.getElementById('update-btn');
+  const msg=document.getElementById('update-msg');
+  const log=document.getElementById('update-log');
+  btn.disabled=true;
+  btn.textContent='Updating…';
+  msg.innerHTML='<div class="ok-banner"><span class="spinner"></span> Update started — downloading latest scripts and web panel…</div>';
+  log.style.display='block';
+  log.textContent='';
+  const r=await api('POST','/system/update');
+  if(r.error){
+    msg.innerHTML=`<div class="err-banner">${r.error}</div>`;
+    btn.disabled=false;btn.textContent='Check & Apply Updates';
+    return;
+  }
+  if(_updatePoll) clearInterval(_updatePoll);
+  _updatePoll=setInterval(async()=>{
+    const d=await api('GET','/system/update-log');
+    log.textContent=(d.lines||[]).join('\n');
+    log.scrollTop=log.scrollHeight;
+    if(!d.running){
+      clearInterval(_updatePoll);_updatePoll=null;
+      const ok=(d.lines||[]).some(l=>l.includes('Update complete'));
+      const failed=(d.lines||[]).some(l=>l.includes('failed'));
+      if(failed&&!ok){
+        msg.innerHTML='<div class="err-banner">Update finished with errors — check the log above.</div>';
+      } else {
+        msg.innerHTML='<div class="ok-banner">Update complete. The web panel will restart shortly — reload this page in a few seconds.</div>';
+      }
+      btn.disabled=false;btn.textContent='Check & Apply Updates';
+    }
+  },2000);
 }
 
 // Init

@@ -119,6 +119,7 @@ inject_files() {
     -e "s|@@BOTS_DIR@@|${BOTS_DIR}|g" \
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
+    -e "s|@@REPO_BASE@@|${REPO_BASE}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-firstboot.sh" \
     > "$FB_TMP"
   install -m 0755 "$FB_TMP" "${MOUNT_DIR}/usr/local/bin/wp-os-firstboot.sh"
@@ -136,6 +137,10 @@ inject_files() {
   install -m 0755 \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-manager.sh" \
     "${MOUNT_DIR}/usr/local/bin/wp-os-bot-manager.sh"
+
+  install -m 0755 \
+    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-update.sh" \
+    "${MOUNT_DIR}/usr/local/bin/wp-os-update.sh"
 
   # Copy webserver
   mkdir -p "${MOUNT_DIR}${WEBSERVER_DIR}"
