@@ -332,6 +332,34 @@ def api_slot_status(slot_id):
         "installing": installing,
     })
 
+@app.route("/api/slots/<slot_id>/voicechat-config", methods=["GET"])
+def api_voicechat_config_get(slot_id):
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+    cfg = _read_json(slot_dir / ".config.json", {})
+    return jsonify({
+        "client_id": cfg.get("client_id", ""),
+        "guild_id": cfg.get("guild_id", ""),
+    })
+
+@app.route("/api/slots/<slot_id>/voicechat-config", methods=["POST"])
+def api_voicechat_config_set(slot_id):
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+    data = request.json or {}
+    client_id = data.get("client_id", "").strip()
+    guild_id = data.get("guild_id", "").strip()
+    cfg = _read_json(slot_dir / ".config.json", {})
+    cfg["client_id"] = client_id
+    cfg["guild_id"] = guild_id
+    cfg_path = slot_dir / ".config.json"
+    _write_json(cfg_path, cfg)
+    os.chmod(cfg_path, 0o600)
+    os.chown(cfg_path, 0, 0)
+    return jsonify({"ok": True})
+
 @app.route("/api/install-log/<slot_id>", methods=["GET"])
 def api_install_log(slot_id):
     log_file = f"/tmp/wp-os-install-{slot_id}.log"
@@ -787,6 +815,7 @@ async function loadBots(){
   const el=document.getElementById('bots-list');
   if(!_slots.length){el.innerHTML='<div class="card" style="color:#64748b">No slots yet.</div>';return;}
   el.innerHTML=_slots.map(s=>slotCard(s)).join('');
+  _slots.filter(s=>s.type==='voicechat').forEach(s=>loadVcConfig(s.slot_id));
 }
 
 function slotCard(s){
@@ -806,8 +835,34 @@ function slotCard(s){
     ${installBtn}
     <button class="btn-danger btn-sm" onclick="removeSlot('${s.slot_id}')">Remove</button>
   </div>
+  ${s.type==='voicechat'?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #2d3148">
+    <div style="font-size:.82rem;color:#94a3b8;margin-bottom:6px">VoiceChat Config</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <label>Client ID<input id="vc-cid-${s.slot_id}" placeholder="Discord Application ID"></label>
+      <label>Guild ID<input id="vc-gid-${s.slot_id}" placeholder="Discord Server ID"></label>
+      <button class="btn-primary btn-sm" onclick="saveVcConfig('${s.slot_id}')">Save</button>
+    </div>
+    <div id="vc-msg-${s.slot_id}" style="font-size:.8rem;margin-top:6px"></div>
+  </div>`:''}
   <div id="install-log-${s.slot_id}" class="install-log"></div>
 </div>`;
+}
+
+async function loadVcConfig(sid){
+  const d=await api('GET',`/slots/${sid}/voicechat-config`);
+  const cid=document.getElementById(`vc-cid-${sid}`);
+  const gid=document.getElementById(`vc-gid-${sid}`);
+  if(cid) cid.value=d.client_id||'';
+  if(gid) gid.value=d.guild_id||'';
+}
+
+async function saveVcConfig(sid){
+  const client_id=(document.getElementById(`vc-cid-${sid}`)?.value||'').trim();
+  const guild_id=(document.getElementById(`vc-gid-${sid}`)?.value||'').trim();
+  const r=await api('POST',`/slots/${sid}/voicechat-config`,{client_id,guild_id});
+  const msg=document.getElementById(`vc-msg-${sid}`);
+  if(r.error){msg.innerHTML=`<span style="color:#f87171">${esc(r.error)}</span>`;}
+  else{msg.innerHTML='<span style="color:#4ade80">Saved — restart bot to apply</span>';setTimeout(()=>{if(msg)msg.innerHTML='';},3000);}
 }
 
 async function slotAct(sid,action){
