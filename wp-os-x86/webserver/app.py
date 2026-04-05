@@ -3,11 +3,12 @@
 WhiteoutProjectOS -- Multi-Bot Web Control Panel
 Serves on PORT env var (default 8080). Run as root.
 """
-import fcntl
 import hashlib
 import json
 import os
+import pwd
 import re
+import shutil
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -63,13 +64,6 @@ def _os_user_ids():
     except KeyError:
         return 0, 0
 
-def _os_user_ids():
-    try:
-        pw = pwd.getpwnam(OS_USER)
-        return pw.pw_uid, pw.pw_gid
-    except KeyError:
-        return 0, 0
-
 def _read_json(path: Path, default):
     try:
         with open(path) as f:
@@ -77,13 +71,14 @@ def _read_json(path: Path, default):
     except Exception:
         return default
 
+_json_lock = threading.Lock()
+
 def _write_json(path: Path, data):
     tmp = str(path) + ".tmp"
-    with open(tmp, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        json.dump(data, f, indent=2)
-        fcntl.flock(f, fcntl.LOCK_UN)
-    os.replace(tmp, path)
+    with _json_lock:
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, path)
     os.chmod(path, 0o600)
     os.chown(path, 0, 0)
 
@@ -248,7 +243,6 @@ def api_slots_remove(slot_id):
     subprocess.run(["systemctl", "stop",    f"wp-os-bot@{slot_id}"], check=False)
     subprocess.run(["systemctl", "disable", f"wp-os-bot@{slot_id}"], check=False)
 
-    import shutil
     shutil.rmtree(slot_dir, ignore_errors=True)
     return jsonify({"ok": True})
 
@@ -276,6 +270,8 @@ def api_slot_install(slot_id):
     bot_type = meta.get("type")
     if not bot_type:
         return jsonify({"error": "No type in meta.json"}), 400
+    if bot_type not in API_GROUPS:
+        return jsonify({"error": f"Unknown bot type in meta.json: {bot_type}"}), 400
     if slot_id in _install_procs and _install_procs[slot_id].poll() is None:
         return jsonify({"error": "Install already running"}), 400
 
