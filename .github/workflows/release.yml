@@ -1,0 +1,191 @@
+name: Build & Release
+
+# Triggers:
+#   - Push a tag like v1.0.0  → builds both images and publishes a release
+#   - workflow_dispatch        → builds both images; optionally publishes a release
+#
+# Optional secrets (Settings → Secrets → Actions):
+#   OS_PASSWORD   override default password  (default: wpusr)
+#   OS_USERNAME   override default username  (default: wp-os-user)
+#   OS_HOSTNAME   override default hostname  (default: wp-os-server)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publish a GitHub Release after building'
+        type: boolean
+        default: false
+      tag_name:
+        description: 'Release tag (e.g. v1.0.0) — required when creating a release'
+        required: false
+        default: ''
+
+jobs:
+  # ============================================================
+  # x86 ISO
+  # ============================================================
+  build-x86:
+    name: Build x86 ISO
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xorriso wget openssl p7zip-full
+          sudo apt-get clean
+
+      - name: Cache base Ubuntu ISO
+        uses: actions/cache@v4
+        with:
+          path: wp-os-x86/build-tmp/ubuntu-server-base.iso
+          key: ubuntu-server-iso-24.04
+
+      - name: Patch credentials from secrets
+        env:
+          _PASS: ${{ secrets.OS_PASSWORD }}
+          _USER: ${{ secrets.OS_USERNAME }}
+          _HOST: ${{ secrets.OS_HOSTNAME }}
+        run: |
+          [ -n "$_PASS" ] && sed -i "s|OS_PASSWORD=\"wpusr\"|OS_PASSWORD=\"${_PASS}\"|" wp-os-x86/config.sh || true
+          [ -n "$_USER" ] && sed -i "s|OS_USERNAME=\"wp-os-user\"|OS_USERNAME=\"${_USER}\"|" wp-os-x86/config.sh || true
+          [ -n "$_HOST" ] && sed -i "s|OS_HOSTNAME=\"wp-os-server\"|OS_HOSTNAME=\"${_HOST}\"|" wp-os-x86/config.sh || true
+
+      - name: Build x86 ISO
+        run: cd wp-os-x86 && sudo ./build-iso.sh
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp-os-x86-iso
+          path: wp-os-x86/output/*.iso
+          retention-days: 3
+
+  # ============================================================
+  # Raspberry Pi image
+  # ============================================================
+  build-rpi:
+    name: Build RPi Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h
+
+      - name: Set up QEMU (arm64 chroot support)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y wget xz-utils
+          sudo apt-get clean
+
+      - name: Cache base Ubuntu RPi image
+        uses: actions/cache@v4
+        with:
+          path: wp-os-rpi/build-tmp/ubuntu-raspi-base.img
+          key: ubuntu-raspi-img-24.04
+
+      - name: Patch credentials from secrets
+        env:
+          _PASS: ${{ secrets.OS_PASSWORD }}
+          _USER: ${{ secrets.OS_USERNAME }}
+          _HOST: ${{ secrets.OS_HOSTNAME }}
+        run: |
+          [ -n "$_PASS" ] && sed -i "s|OS_PASSWORD=\"wpusr\"|OS_PASSWORD=\"${_PASS}\"|" wp-os-rpi/config.sh || true
+          [ -n "$_USER" ] && sed -i "s|OS_USERNAME=\"wp-os-user\"|OS_USERNAME=\"${_USER}\"|" wp-os-rpi/config.sh || true
+          [ -n "$_HOST" ] && sed -i "s|OS_HOSTNAME=\"wp-os-server\"|OS_HOSTNAME=\"${_HOST}\"|" wp-os-rpi/config.sh || true
+
+      - name: Build RPi image
+        run: cd wp-os-rpi && sudo ./build.sh
+
+      - name: Upload RPi artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp-os-rpi-image
+          path: wp-os-rpi/output/*.img.xz
+          retention-days: 3
+
+  # ============================================================
+  # GitHub Release
+  # ============================================================
+  release:
+    name: Create Release
+    needs: [build-x86, build-rpi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: >
+      startsWith(github.ref, 'refs/tags/') ||
+      (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets/
+          merge-multiple: true
+
+      - name: Determine release tag and date
+        id: vars
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="${{ inputs.tag_name }}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: WhiteoutProjectOS ${{ steps.vars.outputs.tag }}
+          body: |
+            ## WhiteoutProjectOS ${{ steps.vars.outputs.tag }}
+            Built on ${{ steps.vars.outputs.date }}
+
+            ### Downloads
+            | File | Target | Flash with |
+            |------|--------|------------|
+            | `wp-os-x86-*.iso` | PC / VM / bare metal (x86-64) | [Rufus](https://rufus.ie) / [Balena Etcher](https://etcher.balena.io) / `dd` |
+            | `wp-os-rpi-*.img.xz` | Raspberry Pi 4 / 5 (arm64) | [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or `xz -dc *.img.xz \| sudo dd of=/dev/sdX bs=4M status=progress` |
+
+            ### Default Credentials
+            > ⚠️ **Change these before exposing the device to any network you don't fully control.**
+
+            | | |
+            |-|-|
+            | Username | `wp-os-user` |
+            | Password | `wpusr` |
+            | Web panel | `http://<device-ip>:8080` |
+            | SSH | `ssh wp-os-user@<device-ip>` |
+            | VNC | `<device-ip>:5900` (password: same as above) |
+
+            ### First Boot
+            The device will run full setup on first boot (~5–15 min depending on internet speed).
+            SSH and the web panel will be available after the automatic reboot.
+          files: release-assets/*
+          draft: false
+          prerelease: false
