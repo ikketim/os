@@ -70,7 +70,6 @@ mount_image() {
   LOOP_DEV=$(losetup -fP --show "$BASE_IMG")
   info "Loop device: ${LOOP_DEV}"
 
-  # Identify root partition (usually p2 for Ubuntu Pi)
   ROOT_PART=""
   for part in "${LOOP_DEV}p2" "${LOOP_DEV}p1"; do
     if [ -b "$part" ]; then
@@ -82,13 +81,11 @@ mount_image() {
 
   mount "$ROOT_PART" "$MOUNT_DIR"
 
-  # Mount boot partition if separate
   if [ -b "${LOOP_DEV}p1" ] && [ "$ROOT_PART" != "${LOOP_DEV}p1" ]; then
     mkdir -p "${MOUNT_DIR}/boot/firmware"
     mount "${LOOP_DEV}p1" "${MOUNT_DIR}/boot/firmware" 2>/dev/null || true
   fi
 
-  # Bind mounts for chroot
   mount --bind /proc "${MOUNT_DIR}/proc"
   mount --bind /sys  "${MOUNT_DIR}/sys"
   mount --bind /dev  "${MOUNT_DIR}/dev"
@@ -113,14 +110,13 @@ inject_files() {
     -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
     -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
     -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
+    -e "s|@@BOT_VOICECHAT_REPO@@|${BOT_VOICECHAT_REPO}|g" \
+    -e "s|@@BOT_VOICECHAT_BRANCH@@|${BOT_VOICECHAT_BRANCH}|g" \
     -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
+    -e "s|@@DEFAULT_BOT_LABEL@@|${DEFAULT_BOT_LABEL}|g" \
     -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
     -e "s|@@DESKTOP@@|${DESKTOP}|g" \
-    -e "s|@@BOT_DIR@@|${BOT_DIR}|g" \
-    -e "s|@@VENV_DIR@@|${VENV_DIR}|g" \
-    -e "s|@@SERVICE_NAME@@|${SERVICE_NAME}|g" \
-    -e "s|@@SERVICE_FILE@@|${SERVICE_FILE}|g" \
-    -e "s|@@TOKEN_FILE@@|${TOKEN_FILE}|g" \
+    -e "s|@@BOTS_DIR@@|${BOTS_DIR}|g" \
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-firstboot.sh" \
@@ -128,10 +124,18 @@ inject_files() {
   install -m 0755 "$FB_TMP" "${MOUNT_DIR}/usr/local/bin/wp-os-firstboot.sh"
   rm -f "$FB_TMP"
 
-  # Copy switch-bot script (placeholders substituted at first boot by wp-os-firstboot.sh)
+  # Copy helper scripts (no substitution -- source /etc/wp-os/config.env at runtime)
   install -m 0755 \
-    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-switch-bot.sh" \
-    "${MOUNT_DIR}/usr/local/bin/wp-os-switch-bot.sh"
+    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-install-bot.sh" \
+    "${MOUNT_DIR}/usr/local/bin/wp-os-install-bot.sh"
+
+  install -m 0755 \
+    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-start.sh" \
+    "${MOUNT_DIR}/usr/local/bin/wp-os-bot-start.sh"
+
+  install -m 0755 \
+    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-manager.sh" \
+    "${MOUNT_DIR}/usr/local/bin/wp-os-bot-manager.sh"
 
   # Copy webserver
   mkdir -p "${MOUNT_DIR}${WEBSERVER_DIR}"
@@ -171,7 +175,7 @@ compress_image() {
 
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║  WhiteoutProjectOS RPi image built successfully!             ║${NC}"
+  echo -e "${GREEN}║  WhiteoutProjectOS RPi image built successfully!     ║${NC}"
   echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
   echo ""
   echo -e "  Image : ${YELLOW}${FINAL_IMG}${NC}  ($(du -sh "$FINAL_IMG" | cut -f1))"
@@ -183,7 +187,7 @@ compress_image() {
 main() {
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║     WhiteoutProjectOS Raspberry Pi Image Builder             ║${NC}"
+  echo -e "${GREEN}║     WhiteoutProjectOS Raspberry Pi Image Builder     ║${NC}"
   echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
   echo ""
   check_deps

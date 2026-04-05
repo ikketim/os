@@ -36,8 +36,12 @@ autoinstall:
   late-commands:
     - cp /cdrom/wp-os/wp-os-provision.sh /target/usr/local/bin/wp-os-provision.sh
     - chmod +x /target/usr/local/bin/wp-os-provision.sh
-    - cp /cdrom/wp-os/wp-os-switch-bot.sh /target/usr/local/bin/wp-os-switch-bot.sh
-    - chmod +x /target/usr/local/bin/wp-os-switch-bot.sh
+    - cp /cdrom/wp-os/wp-os-install-bot.sh /target/usr/local/bin/wp-os-install-bot.sh
+    - chmod +x /target/usr/local/bin/wp-os-install-bot.sh
+    - cp /cdrom/wp-os/wp-os-bot-start.sh /target/usr/local/bin/wp-os-bot-start.sh
+    - chmod +x /target/usr/local/bin/wp-os-bot-start.sh
+    - cp /cdrom/wp-os/wp-os-bot-manager.sh /target/usr/local/bin/wp-os-bot-manager.sh
+    - chmod +x /target/usr/local/bin/wp-os-bot-manager.sh
     - mkdir -p /target/@@WEBSERVER_DIR@@
     - cp /cdrom/wp-os/app.py /target/@@WEBSERVER_DIR@@/app.py
     - cp /cdrom/wp-os/wp-os-firstboot.service /target/etc/systemd/system/wp-os-firstboot.service

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # ============================================================
 # WhiteoutProjectOS Raspberry Pi -- First Boot Setup Script
+# Placeholders (@@VAR@@) are substituted by build.sh
 # ============================================================
 set -euo pipefail
+
 LOG="/var/log/wp-os-setup.log"
 exec > >(tee -a "$LOG") 2>&1
 
@@ -21,21 +23,21 @@ BOT_JS_BRANCH="@@BOT_JS_BRANCH@@"
 BOT_KINGSHOT_REPO="@@BOT_KINGSHOT_REPO@@"
 BOT_KINGSHOT_BRANCH="@@BOT_KINGSHOT_BRANCH@@"
 BOT_KINGSHOT_INSTALL_PY="@@BOT_KINGSHOT_INSTALL_PY@@"
+BOT_VOICECHAT_REPO="@@BOT_VOICECHAT_REPO@@"
+BOT_VOICECHAT_BRANCH="@@BOT_VOICECHAT_BRANCH@@"
 BACKGROUND_IMAGE_URL="@@BACKGROUND_IMAGE_URL@@"
-BOT_DIR="@@BOT_DIR@@"
-VENV_DIR="${BOT_DIR}/venv"
-SERVICE_NAME="@@SERVICE_NAME@@"
-SERVICE_FILE="@@SERVICE_FILE@@"
-TOKEN_FILE="@@TOKEN_FILE@@"
+DESKTOP="@@DESKTOP@@"
+BOTS_DIR="@@BOTS_DIR@@"
+DEFAULT_BOT="@@DEFAULT_BOT@@"
+DEFAULT_BOT_LABEL="@@DEFAULT_BOT_LABEL@@"
 WEBSERVER_DIR="@@WEBSERVER_DIR@@"
 WEBSERVER_PORT="@@WEBSERVER_PORT@@"
-DEFAULT_BOT="@@DEFAULT_BOT@@"
 
 export DEBIAN_FRONTEND=noninteractive
 
 # -- 1. Hostname
 echo "[1/13] Setting hostname..."
-hostnamectl set-hostname "$OS_HOSTNAME"
+hostnamectl set-hostname "$OS_HOSTNAME" 2>/dev/null || echo "$OS_HOSTNAME" > /etc/hostname
 sed -i "s/127.0.1.1.*/127.0.1.1\t${OS_HOSTNAME}/" /etc/hosts 2>/dev/null || \
   echo "127.0.1.1\t${OS_HOSTNAME}" >> /etc/hosts
 
@@ -45,29 +47,32 @@ if ! id "$OS_USERNAME" &>/dev/null; then
   useradd -m -s /bin/bash -G sudo,adm,dialout,cdrom,audio,video,plugdev,games,users,input "$OS_USERNAME"
 fi
 echo "${OS_USERNAME}:${OS_PASSWORD}" | chpasswd
+echo "${OS_USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${OS_USERNAME}"
+chmod 440 "/etc/sudoers.d/${OS_USERNAME}"
 if id ubuntu &>/dev/null; then usermod -L ubuntu || true; fi
 
 # -- 3. System update
 echo "[3/13] Updating system..."
 apt-get update -qq
-apt-get upgrade -y -qq
+apt-get upgrade -y -qq --no-install-recommends
 
 # -- 4. Core packages
-echo "[4/13] Installing packages..."
-apt-get install -y -qq \
-  python3 python3-full python3-venv python3-pip wget curl git \
-  openssh-server x11vnc xvfb feh python3-flask jq net-tools \
-  xdotool ca-certificates unzip
+echo "[4/13] Installing core packages..."
+apt-get install -y -qq --no-install-recommends \
+  python3 python3-full python3-venv python3-pip \
+  wget curl git ca-certificates \
+  openssh-server python3-flask \
+  feh jq net-tools unzip xdotool
 
 # -- 5. Node.js 22
 echo "[5/13] Installing Node.js 22..."
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1
 apt-get install -y -qq nodejs
 
-# -- 6. Desktop (XFCE)
-echo "[6/13] Installing desktop..."
+# -- 6. Desktop
+echo "[6/13] Installing desktop (${DESKTOP})..."
 apt-get install -y -qq --no-install-recommends \
-  xfce4 xfce4-terminal xfce4-session lightdm lightdm-gtk-greeter
+  xfce4 xfce4-terminal xfce4-session lightdm lightdm-gtk-greeter x11vnc xvfb
 systemctl enable lightdm || true
 systemctl set-default graphical.target || true
 mkdir -p /etc/lightdm/lightdm.conf.d
@@ -75,7 +80,7 @@ cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf <<EOF
 [Seat:*]
 autologin-user=${OS_USERNAME}
 autologin-user-timeout=0
-user-session=xfce
+user-session=${DESKTOP}
 EOF
 
 # -- 7. Wallpaper
@@ -85,17 +90,17 @@ mkdir -p "$WALL_DIR"
 wget -q -O "${WALL_DIR}/wp-os.png" "$BACKGROUND_IMAGE_URL" || true
 
 mkdir -p "/home/${OS_USERNAME}/.config/autostart"
-cat > "/home/${OS_USERNAME}/.config/autostart/wallpaper.desktop" <<EOF
+cat > "/home/${OS_USERNAME}/.config/autostart/wallpaper.desktop" <<'DESK'
 [Desktop Entry]
 Type=Application
 Name=Set Wallpaper
 Exec=feh --bg-scale /usr/share/wallpapers/wp-os/wp-os.png
 Hidden=false
 X-GNOME-Autostart-enabled=true
-EOF
+DESK
 
 mkdir -p "/home/${OS_USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml"
-cat > "/home/${OS_USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml" <<EOF
+cat > "/home/${OS_USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xfce4-desktop" version="1.0">
   <property name="backdrop" type="empty">
@@ -109,10 +114,10 @@ cat > "/home/${OS_USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-deskt
     </property>
   </property>
 </channel>
-EOF
+XML
 chown -R "${OS_USERNAME}:${OS_USERNAME}" "/home/${OS_USERNAME}/.config"
 
-# -- 8. Desktop shortcut for web panel
+# -- 8. Desktop shortcut
 echo "[8/13] Creating desktop shortcut..."
 DESK_DIR="/home/${OS_USERNAME}/Desktop"
 mkdir -p "$DESK_DIR"
@@ -121,7 +126,6 @@ cat > "${DESK_DIR}/WhiteoutProjectOS-Panel.desktop" <<EOF
 Version=1.0
 Type=Application
 Name=WhiteoutProjectOS Control Panel
-Comment=Open the WhiteoutProjectOS web control panel
 Exec=xdg-open http://localhost:${WEBSERVER_PORT}
 Icon=applications-internet
 Terminal=false
@@ -130,49 +134,64 @@ EOF
 chmod +x "${DESK_DIR}/WhiteoutProjectOS-Panel.desktop"
 chown -R "${OS_USERNAME}:${OS_USERNAME}" "$DESK_DIR"
 
-# -- 9. Bot installation
-echo "[9/13] Installing WOSBot (${DEFAULT_BOT})..."
-mkdir -p "$BOT_DIR"
-cd "$BOT_DIR"
-wget -q -O main.py "$BOT_MAIN_PY"
-wget -q -O install.py "$BOT_INSTALL_PY"
-chown -R "${OS_USERNAME}:${OS_USERNAME}" "$BOT_DIR"
-chmod 755 "$BOT_DIR"
-sudo -u "$OS_USERNAME" python3 -m venv "$VENV_DIR"
-sudo -u "$OS_USERNAME" "$VENV_DIR/bin/pip" install --quiet --upgrade pip
-sudo -u "$OS_USERNAME" "$VENV_DIR/bin/python3" install.py || true
-rm -f install.py
-chown -R "${OS_USERNAME}:${OS_USERNAME}" "$BOT_DIR"
-chmod 755 "$BOT_DIR"
-if [ ! -f "$TOKEN_FILE" ]; then echo "" > "$TOKEN_FILE"; fi
-chown root:root "$TOKEN_FILE"
-chmod 644 "$TOKEN_FILE"
-echo "$DEFAULT_BOT" > "${BOT_DIR}/.bot_type"
-chown "${OS_USERNAME}:${OS_USERNAME}" "${BOT_DIR}/.bot_type"
-
-# -- 10. Wosbot service
-echo "[10/13] Installing wosbot service..."
-cat > "$SERVICE_FILE" <<EOF
-[Unit]
-Description=WOSBot (Whiteout Survival - Python)
-After=network.target
-[Service]
-ExecStart=${VENV_DIR}/bin/python3 ${BOT_DIR}/main.py --autoupdate
-WorkingDirectory=${BOT_DIR}
-Restart=always
-RestartSec=5
-User=${OS_USERNAME}
-Environment="OMP_NUM_THREADS=1"
-Environment="ONNXRUNTIME_NTHREADS=1"
-[Install]
-WantedBy=multi-user.target
+# -- 9. Runtime config + bots directory
+echo "[9/13] Writing runtime config and bot directory structure..."
+mkdir -p /etc/wp-os
+cat > /etc/wp-os/config.env <<EOF
+OS_USERNAME=${OS_USERNAME}
+BOTS_DIR=${BOTS_DIR}
+BOT_MAIN_PY=${BOT_MAIN_PY}
+BOT_INSTALL_PY=${BOT_INSTALL_PY}
+BOT_JS_REPO=${BOT_JS_REPO}
+BOT_JS_BRANCH=${BOT_JS_BRANCH}
+BOT_KINGSHOT_REPO=${BOT_KINGSHOT_REPO}
+BOT_KINGSHOT_BRANCH=${BOT_KINGSHOT_BRANCH}
+BOT_KINGSHOT_INSTALL_PY=${BOT_KINGSHOT_INSTALL_PY}
+BOT_VOICECHAT_REPO=${BOT_VOICECHAT_REPO}
+BOT_VOICECHAT_BRANCH=${BOT_VOICECHAT_BRANCH}
+WEBSERVER_DIR=${WEBSERVER_DIR}
+WEBSERVER_PORT=${WEBSERVER_PORT}
 EOF
+chmod 644 /etc/wp-os/config.env
+
+mkdir -p "${BOTS_DIR}"
+echo '{"tokens":{}}' > "${BOTS_DIR}/.registry.json"
+echo '{"tokens":[]}' > "${BOTS_DIR}/.vault.json"
+chmod 600 "${BOTS_DIR}/.registry.json" "${BOTS_DIR}/.vault.json"
+chown -R "${OS_USERNAME}:${OS_USERNAME}" "${BOTS_DIR}"
+chown root:root "${BOTS_DIR}/.registry.json" "${BOTS_DIR}/.vault.json"
+
+# Determine default slot ID
+case "$DEFAULT_BOT" in
+  wos-py|wos-js) DEFAULT_SLOT_ID="wos-1" ;;
+  kingshot)       DEFAULT_SLOT_ID="kingshot-1" ;;
+  voicechat)      DEFAULT_SLOT_ID="vc-1" ;;
+  *)              DEFAULT_SLOT_ID="wos-1" ;;
+esac
+
+SLOT_DIR="${BOTS_DIR}/${DEFAULT_SLOT_ID}"
+mkdir -p "${SLOT_DIR}/app"
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+printf '{"type":"%s","label":"%s","created":"%s","installed":false}\n' \
+  "${DEFAULT_BOT}" "${DEFAULT_BOT_LABEL}" "${NOW}" > "${SLOT_DIR}/.meta.json"
+touch "${SLOT_DIR}/token.txt"
+chmod 644 "${SLOT_DIR}/.meta.json"
+chmod 600 "${SLOT_DIR}/token.txt"
+chown root:root "${SLOT_DIR}/.meta.json"
+chown "${OS_USERNAME}:${OS_USERNAME}" \
+  "${SLOT_DIR}/token.txt" "${SLOT_DIR}" "${SLOT_DIR}/app"
+
+# -- 10. Install default bot
+echo "[10/13] Installing default bot (${DEFAULT_BOT}) into slot ${DEFAULT_SLOT_ID}..."
+chmod +x /usr/local/bin/wp-os-install-bot.sh
+/usr/local/bin/wp-os-install-bot.sh "${DEFAULT_SLOT_ID}" "${DEFAULT_BOT}" || \
+  echo "[WARN] Default bot install had errors -- check /var/log/wp-os-setup.log"
 
 # -- 11. SSH
 echo "[11/13] Configuring SSH..."
-systemctl enable ssh
+systemctl enable ssh 2>/dev/null || systemctl enable openssh-server 2>/dev/null || true
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
+sed -i 's/PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 
 # -- 12. VNC
 echo "[12/13] Setting up VNC..."
@@ -182,7 +201,7 @@ chown -R "${OS_USERNAME}:${OS_USERNAME}" "/home/${OS_USERNAME}/.vnc"
 
 cat > /etc/systemd/system/xvfb.service <<'EOF'
 [Unit]
-Description=Virtual Framebuffer X Server
+Description=Virtual Framebuffer
 After=network.target
 [Service]
 ExecStart=/usr/bin/Xvfb :1 -screen 0 1920x1080x24
@@ -206,43 +225,39 @@ User=${OS_USERNAME}
 WantedBy=multi-user.target
 EOF
 
-# -- 13. Web control panel & switch-bot script
-echo "[13/13] Installing web control panel..."
+# -- 13. Systemd services + web control panel
+echo "[13/13] Installing systemd services and web control panel..."
+
+# Bot slot service template
+cat > /etc/systemd/system/wp-os-bot@.service <<EOF
+[Unit]
+Description=WhiteoutProjectOS Bot slot %i
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wp-os-bot-start.sh %i
+WorkingDirectory=${BOTS_DIR}/%i
+Restart=always
+RestartSec=5
+User=${OS_USERNAME}
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+touch /etc/wp-os/gui_enabled
+
+chmod +x /usr/local/bin/wp-os-bot-manager.sh \
+         /usr/local/bin/wp-os-bot-start.sh 2>/dev/null || true
+
 mkdir -p "$WEBSERVER_DIR"
-
-# Substitute switch-bot script
-SWITCH_SRC="/usr/local/bin/wp-os-switch-bot.sh"
-sed -i \
-  -e "s|@@OS_USERNAME@@|${OS_USERNAME}|g" \
-  -e "s|@@BOT_DIR@@|${BOT_DIR}|g" \
-  -e "s|@@VENV_DIR@@|${VENV_DIR}|g" \
-  -e "s|@@SERVICE_NAME@@|${SERVICE_NAME}|g" \
-  -e "s|@@TOKEN_FILE@@|${TOKEN_FILE}|g" \
-  -e "s|@@BOT_MAIN_PY@@|${BOT_MAIN_PY}|g" \
-  -e "s|@@BOT_INSTALL_PY@@|${BOT_INSTALL_PY}|g" \
-  -e "s|@@BOT_JS_REPO@@|${BOT_JS_REPO}|g" \
-  -e "s|@@BOT_JS_BRANCH@@|${BOT_JS_BRANCH}|g" \
-  -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
-  -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
-  -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
-  -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
-  -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
-  -e "s|@@DESKTOP@@|${DESKTOP}|g" \
-  "$SWITCH_SRC"
-# Fix ownership
-chown root:root "$SWITCH_SRC"
-chmod +x "$SWITCH_SRC"
-
-# Fix ownership and permissions on webserver
 chown root:root "$WEBSERVER_DIR"
 chmod 755 "$WEBSERVER_DIR"
-chown root:root "${WEBSERVER_DIR}/app.py" 2>/dev/null || true
-chmod 755 "${WEBSERVER_DIR}/app.py" 2>/dev/null || true
 
-mkdir -p /etc/wp-os
-touch /etc/wp-os/gui_enabled  # GUI enabled by default on Pi
-
-cat > /etc/systemd/system/wp-os-web.service <<WEBEOF
+cat > /etc/systemd/system/wp-os-web.service <<EOF
 [Unit]
 Description=WhiteoutProjectOS Web Control Panel
 After=network.target
@@ -252,24 +267,22 @@ WorkingDirectory=${WEBSERVER_DIR}
 Restart=always
 RestartSec=5
 User=root
-Environment=OS_USERNAME=${OS_USERNAME}
-Environment=BOT_DIR=${BOT_DIR}
-Environment=TOKEN_FILE=${TOKEN_FILE}
-Environment=SERVICE_NAME=${SERVICE_NAME}
+EnvironmentFile=/etc/wp-os/config.env
 Environment=PORT=${WEBSERVER_PORT}
 [Install]
 WantedBy=multi-user.target
-WEBEOF
+EOF
 
 systemctl daemon-reload
-for svc in wosbot xvfb x11vnc wp-os-web ssh; do
+for svc in xvfb x11vnc wp-os-web ssh openssh-server; do
   systemctl enable "$svc" 2>/dev/null || true
 done
+systemctl enable "wp-os-bot@${DEFAULT_SLOT_ID}" 2>/dev/null || true
 
-# Start services now (don't wait for reboot)
-for svc in ssh xvfb x11vnc wp-os-web wosbot; do
+for svc in ssh openssh-server xvfb x11vnc wp-os-web; do
   systemctl start "$svc" 2>/dev/null || true
 done
+systemctl start "wp-os-bot@${DEFAULT_SLOT_ID}" 2>/dev/null || true
 
 systemctl disable wp-os-firstboot.service 2>/dev/null || true
 rm -f /etc/systemd/system/wp-os-firstboot.service
@@ -278,9 +291,9 @@ echo "========================================="
 echo " WhiteoutProjectOS First-Boot Setup COMPLETE"
 echo " $(date)"
 echo "========================================="
-echo " SSH : port 22  (user: ${OS_USERNAME})"
-echo " VNC : port 5900"
-echo " Web : http://<pi-ip>:${WEBSERVER_PORT}"
+echo " SSH  : port 22  (user: ${OS_USERNAME})"
+echo " VNC  : port 5900"
+echo " Web  : http://<ip>:${WEBSERVER_PORT}"
 echo "========================================="
 sleep 5
 reboot

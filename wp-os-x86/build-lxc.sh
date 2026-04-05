@@ -49,7 +49,6 @@ check_deps() {
 download_template() {
   info "Checking for Ubuntu 24.04 LXC template..." >&2
 
-  # Find template name from available list
   local tmpl_name
   tmpl_name=$(pveam available --section system 2>/dev/null \
     | grep "ubuntu-24.04-standard" | tail -1 | awk '{print $2}')
@@ -58,7 +57,6 @@ download_template() {
     tmpl_name="ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
   fi
 
-  # Download if not already present
   if ! pveam list local 2>/dev/null | grep -q "ubuntu-24.04"; then
     info "Downloading template: ${tmpl_name}" >&2
     pveam download local "$tmpl_name" >&2
@@ -66,7 +64,6 @@ download_template() {
     info "Template already downloaded." >&2
   fi
 
-  # Return ONLY the storage:vztmpl/filename reference -- nothing else to stdout
   local final
   final=$(pveam list local 2>/dev/null | grep "ubuntu-24.04" | tail -1 | awk '{print $1}')
   echo "$final"
@@ -107,6 +104,7 @@ inject_and_run() {
 
   info "Copying provisioning files into container..."
 
+  # Substitute and push provision script
   PROVISION_TMP=$(mktemp)
   sed \
     -e "s|@@OS_USERNAME@@|${OS_USERNAME}|g" \
@@ -118,13 +116,14 @@ inject_and_run() {
     -e "s|@@BOT_JS_BRANCH@@|${BOT_JS_BRANCH}|g" \
     -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
     -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
+    -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
+    -e "s|@@BOT_VOICECHAT_REPO@@|${BOT_VOICECHAT_REPO}|g" \
+    -e "s|@@BOT_VOICECHAT_BRANCH@@|${BOT_VOICECHAT_BRANCH}|g" \
     -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
+    -e "s|@@DEFAULT_BOT_LABEL@@|${DEFAULT_BOT_LABEL}|g" \
     -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
     -e "s|@@DESKTOP@@|${DESKTOP}|g" \
-    -e "s|@@BOT_DIR@@|${BOT_DIR}|g" \
-    -e "s|@@VENV_DIR@@|${VENV_DIR}|g" \
-    -e "s|@@SERVICE_NAME@@|${SERVICE_NAME}|g" \
-    -e "s|@@TOKEN_FILE@@|${TOKEN_FILE}|g" \
+    -e "s|@@BOTS_DIR@@|${BOTS_DIR}|g" \
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-provision.sh" \
@@ -133,37 +132,27 @@ inject_and_run() {
   pct push "$CTID" "$PROVISION_TMP" /usr/local/bin/wp-os-provision.sh --perms 0755
   rm -f "$PROVISION_TMP"
 
-  # Substitute and push switch-bot script
-  SWITCH_TMP=$(mktemp)
-  sed \
-    -e "s|@@OS_USERNAME@@|${OS_USERNAME}|g" \
-    -e "s|@@BOT_DIR@@|${BOT_DIR}|g" \
-    -e "s|@@VENV_DIR@@|${VENV_DIR}|g" \
-    -e "s|@@SERVICE_NAME@@|${SERVICE_NAME}|g" \
-    -e "s|@@TOKEN_FILE@@|${TOKEN_FILE}|g" \
-    -e "s|@@BOT_MAIN_PY@@|${BOT_MAIN_PY}|g" \
-    -e "s|@@BOT_INSTALL_PY@@|${BOT_INSTALL_PY}|g" \
-    -e "s|@@BOT_JS_REPO@@|${BOT_JS_REPO}|g" \
-    -e "s|@@BOT_JS_BRANCH@@|${BOT_JS_BRANCH}|g" \
-    -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
-    -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
-    -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
-    -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
-    -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
-    -e "s|@@DESKTOP@@|${DESKTOP}|g" \
-    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-switch-bot.sh" \
-    > "$SWITCH_TMP"
-  pct push "$CTID" "$SWITCH_TMP" /usr/local/bin/wp-os-switch-bot.sh --perms 0755
-  rm -f "$SWITCH_TMP"
+  # Push helper scripts (no substitution -- they source /etc/wp-os/config.env at runtime)
+  pct push "$CTID" \
+    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-install-bot.sh" \
+    /usr/local/bin/wp-os-install-bot.sh --perms 0755
+  pct push "$CTID" \
+    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-start.sh" \
+    /usr/local/bin/wp-os-bot-start.sh --perms 0755
+  pct push "$CTID" \
+    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-manager.sh" \
+    /usr/local/bin/wp-os-bot-manager.sh --perms 0755
 
+  # Push webserver
   pct exec "$CTID" -- mkdir -p "$WEBSERVER_DIR"
   pct push "$CTID" "${SCRIPT_DIR}/webserver/app.py" "${WEBSERVER_DIR}/app.py" --perms 0755
 
-  # Fix ownership inside container -- pct push doesn't guarantee correct
-  # namespace ownership in unprivileged containers
+  # Fix ownership inside container
   pct exec "$CTID" -- chown root:root \
     /usr/local/bin/wp-os-provision.sh \
-    /usr/local/bin/wp-os-switch-bot.sh \
+    /usr/local/bin/wp-os-install-bot.sh \
+    /usr/local/bin/wp-os-bot-start.sh \
+    /usr/local/bin/wp-os-bot-manager.sh \
     "${WEBSERVER_DIR}/app.py"
 
   info "Running provisioning (this takes 5-15 minutes)..."
@@ -176,7 +165,7 @@ inject_and_run() {
 
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║   WhiteoutProjectOS LXC container ready!                    ║${NC}"
+  echo -e "${GREEN}║   WhiteoutProjectOS LXC container ready!             ║${NC}"
   echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
   echo ""
   echo -e "  Container ID : ${YELLOW}${CTID}${NC}"
@@ -193,7 +182,7 @@ inject_and_run() {
 main() {
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║     WhiteoutProjectOS Proxmox LXC Builder                   ║${NC}"
+  echo -e "${GREEN}║     WhiteoutProjectOS Proxmox LXC Builder            ║${NC}"
   echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
   echo ""
   check_deps

@@ -58,7 +58,6 @@ extract_iso() {
   info "Extracting base ISO..."
   mkdir -p "$CUSTOM_DIR"
 
-  # Use 7z -- avoids loop mount, works on WSL2 and all Linux
   info "Extracting with 7z..."
   7z x "$BASE_ISO" -o"$CUSTOM_DIR" -y > /dev/null
 
@@ -88,6 +87,7 @@ inject_autoinstall() {
   PAYLOAD_DIR="${CUSTOM_DIR}/wp-os"
   mkdir -p "$PAYLOAD_DIR"
 
+  # Substitute and copy provision script
   sed \
     -e "s|@@OS_USERNAME@@|${OS_USERNAME}|g" \
     -e "s|@@OS_PASSWORD@@|${OS_PASSWORD}|g" \
@@ -98,43 +98,42 @@ inject_autoinstall() {
     -e "s|@@BOT_JS_BRANCH@@|${BOT_JS_BRANCH}|g" \
     -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
     -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
+    -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
+    -e "s|@@BOT_VOICECHAT_REPO@@|${BOT_VOICECHAT_REPO}|g" \
+    -e "s|@@BOT_VOICECHAT_BRANCH@@|${BOT_VOICECHAT_BRANCH}|g" \
     -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
+    -e "s|@@DEFAULT_BOT_LABEL@@|${DEFAULT_BOT_LABEL}|g" \
     -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
     -e "s|@@DESKTOP@@|${DESKTOP}|g" \
-    -e "s|@@BOT_DIR@@|${BOT_DIR}|g" \
-    -e "s|@@VENV_DIR@@|${VENV_DIR}|g" \
-    -e "s|@@SERVICE_NAME@@|${SERVICE_NAME}|g" \
-    -e "s|@@TOKEN_FILE@@|${TOKEN_FILE}|g" \
+    -e "s|@@BOTS_DIR@@|${BOTS_DIR}|g" \
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-provision.sh" \
     > "${PAYLOAD_DIR}/wp-os-provision.sh"
   chmod +x "${PAYLOAD_DIR}/wp-os-provision.sh"
 
-  # Substitute and copy switch-bot script into payload
-  sed \
-    -e "s|@@OS_USERNAME@@|${OS_USERNAME}|g" \
-    -e "s|@@BOT_DIR@@|${BOT_DIR}|g" \
-    -e "s|@@VENV_DIR@@|${VENV_DIR}|g" \
-    -e "s|@@SERVICE_NAME@@|${SERVICE_NAME}|g" \
-    -e "s|@@TOKEN_FILE@@|${TOKEN_FILE}|g" \
-    -e "s|@@BOT_MAIN_PY@@|${BOT_MAIN_PY}|g" \
-    -e "s|@@BOT_INSTALL_PY@@|${BOT_INSTALL_PY}|g" \
-    -e "s|@@BOT_JS_REPO@@|${BOT_JS_REPO}|g" \
-    -e "s|@@BOT_JS_BRANCH@@|${BOT_JS_BRANCH}|g" \
-    -e "s|@@BOT_KINGSHOT_REPO@@|${BOT_KINGSHOT_REPO}|g" \
-    -e "s|@@BOT_KINGSHOT_BRANCH@@|${BOT_KINGSHOT_BRANCH}|g" \
-    -e "s|@@BOT_KINGSHOT_INSTALL_PY@@|${BOT_KINGSHOT_INSTALL_PY}|g" \
-    -e "s|@@DEFAULT_BOT@@|${DEFAULT_BOT}|g" \
-    -e "s|@@BACKGROUND_IMAGE_URL@@|${BACKGROUND_IMAGE_URL}|g" \
-    -e "s|@@DESKTOP@@|${DESKTOP}|g" \
-    "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-switch-bot.sh" \
-    > "${PAYLOAD_DIR}/wp-os-switch-bot.sh"
-  chmod +x "${PAYLOAD_DIR}/wp-os-switch-bot.sh"
+  # Copy helper scripts (no substitution -- source config.env at runtime)
+  cp "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-install-bot.sh" \
+     "${PAYLOAD_DIR}/wp-os-install-bot.sh"
+  chmod +x "${PAYLOAD_DIR}/wp-os-install-bot.sh"
+
+  cp "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-start.sh" \
+     "${PAYLOAD_DIR}/wp-os-bot-start.sh"
+  chmod +x "${PAYLOAD_DIR}/wp-os-bot-start.sh"
+
+  cp "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-bot-manager.sh" \
+     "${PAYLOAD_DIR}/wp-os-bot-manager.sh"
+  chmod +x "${PAYLOAD_DIR}/wp-os-bot-manager.sh"
 
   cp "${SCRIPT_DIR}/webserver/app.py" "${PAYLOAD_DIR}/app.py"
   cp "${SCRIPT_DIR}/rootfs-overlay/etc/systemd/system/wp-os-firstboot.service" \
      "${PAYLOAD_DIR}/wp-os-firstboot.service"
+
+  # Download GRUB background image into ISO
+  info "Downloading GRUB background image..."
+  mkdir -p "${CUSTOM_DIR}/boot/grub"
+  wget -q -O "${CUSTOM_DIR}/boot/grub/wp-os.png" "$BACKGROUND_IMAGE_URL" || \
+    warn "Could not download GRUB background image -- continuing without it"
 }
 
 patch_grub() {
@@ -143,19 +142,35 @@ patch_grub() {
   GRUB_CFG="${CUSTOM_DIR}/boot/grub/grub.cfg"
   [ -f "$GRUB_CFG" ] || GRUB_CFG="${CUSTOM_DIR}/grub/grub.cfg"
 
-  AUTOINSTALL_ENTRY='
+  # Use background image if it was downloaded
+  BG_GRUB=""
+  if [ -f "${CUSTOM_DIR}/boot/grub/wp-os.png" ]; then
+    BG_GRUB="background_image /boot/grub/wp-os.png"
+  fi
+
+  cp "$GRUB_CFG" "${GRUB_CFG}.orig"
+
+  cat > "$GRUB_CFG" <<EOF
 set default="0"
-set timeout=5
+set timeout=10
+set gfxmode=auto
+insmod gfxterm
+insmod png
+terminal_output gfxterm
+${BG_GRUB}
 
 menuentry "WhiteoutProjectOS -- Automated Install" {
     set gfxpayload=keep
     linux   /casper/vmlinuz quiet autoinstall "ds=nocloud;s=/cdrom/autoinstall/" ---
     initrd  /casper/initrd
 }
-'
-  cp "$GRUB_CFG" "${GRUB_CFG}.orig"
-  echo "$AUTOINSTALL_ENTRY" | cat - "$GRUB_CFG" > /tmp/grub_new.cfg
-  mv /tmp/grub_new.cfg "$GRUB_CFG"
+
+menuentry "WhiteoutProjectOS -- Manual Install (Safe Mode)" {
+    set gfxpayload=keep
+    linux   /casper/vmlinuz quiet ---
+    initrd  /casper/initrd
+}
+EOF
 }
 
 build_iso() {
@@ -204,7 +219,7 @@ build_iso() {
 
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║  WhiteoutProjectOS x86 ISO built successfully!               ║${NC}"
+  echo -e "${GREEN}║  WhiteoutProjectOS x86 ISO built successfully!       ║${NC}"
   echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
   echo ""
   echo -e "  ISO  : ${YELLOW}${FINAL_ISO}${NC}  ($(du -sh "$FINAL_ISO" | cut -f1))"
@@ -215,7 +230,7 @@ build_iso() {
 main() {
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║     WhiteoutProjectOS x86 ISO Builder                        ║${NC}"
+  echo -e "${GREEN}║     WhiteoutProjectOS x86 ISO Builder                ║${NC}"
   echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
   echo ""
   check_deps
