@@ -1,48 +1,47 @@
 # WhiteoutProjectOS Raspberry Pi
 
-Runs on a Raspberry Pi 4 or 5 (arm64). The image includes XFCE desktop, SSH, VNC, and the WhiteoutProjectOS web control panel pre-configured.
+Runs on a Raspberry Pi 4 or 5 (arm64). Includes XFCE desktop, SSH, VNC, and the WhiteoutProjectOS web control panel pre-configured out of the box.
 
 ---
 
 ## Using the Pre-built Image
 
 ### Requirements
-- Raspberry Pi 4 or 5 (8 GB RAM recommended)
-- MicroSD card (32 GB or larger) or a USB/NVMe SSD
-- The Pi has internet access on first boot
+- Raspberry Pi 4 or 5 (4 GB RAM minimum, 8 GB recommended)
+- MicroSD card (32 GB or larger) or USB/NVMe SSD
+- Internet access on first boot
 
 ### 1. Download the image
 
-> **Download link will be added here.**
+**[→ Download from the latest release](https://github.com/ikketim/os/releases/latest)**
+
+Download the file named `wp-os-rpi-*.img.xz`.
 
 ### 2. Flash the image
 
-**Recommended:** Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+**Recommended — Raspberry Pi Imager:**
 
-1. Open Raspberry Pi Imager
+1. Open [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
 2. Click **Choose OS** → **Use custom** → select the `.img.xz` file
 3. Click **Choose Storage** → select your SD card or SSD
 4. Click **Write**
 
-**Alternative (Linux/macOS):**
+**Alternative (Linux / macOS):**
 ```bash
 xz -dc wp-os-rpi-YYYYMMDD.img.xz | sudo dd of=/dev/sdX bs=4M status=progress
 sync
 ```
-Replace `/dev/sdX` with your SD card device.
+Replace `/dev/sdX` with your SD card device (check with `lsblk`).
 
 ### 3. First boot
 
-Insert the SD card / SSD, power on the Pi. First boot setup runs automatically and takes 5–15 minutes. The Pi **reboots once** when setup is complete.
+Insert the SD card / SSD and power on the Pi. First-boot setup runs automatically and takes 5–15 minutes. The Pi **reboots once** when setup is complete.
 
 ### 4. Find the Pi's IP address
 
-Check your router's DHCP table, or use:
+Check your router's DHCP table, or run from another machine on the same network:
 ```bash
-# From another machine on the same network
-nmap -sn 192.168.1.0/24 | grep -A1 "Raspberry"
-# Or after SSHing in:
-hostname -I
+nmap -sn 192.168.1.0/24 | grep -B1 "Raspberry"
 ```
 
 ### 5. Access
@@ -56,19 +55,32 @@ hostname -I
 
 ### 6. Set your bot token
 
-Open the web panel at `http://<pi-ip>:8080`, go to **Bot Token**, paste your token and click **Save & Restart**.
+Open `http://<pi-ip>:8080`, go to the **Tokens** tab, paste your Discord bot token next to the default slot, and click **Save**.
+
+For VoiceChat bots, expand the slot card and fill in the **Client ID** and **Guild ID** fields before saving.
 
 ---
 
-## Updating the Bot Token Later
+## OS Self-Update
 
-**Via the web panel:** `http://<pi-ip>:8080` → Bot Token → Save & Restart
+To update the web panel and bot scripts without reflashing, open the web panel → **System** → **OS Update**. This downloads the latest versions from the source repository.
+
+Via SSH:
+```bash
+sudo wp-os-update.sh
+```
+
+---
+
+## Managing Bot Tokens
+
+**Via the web panel:** `http://<pi-ip>:8080` → Tokens tab → Set / Assign
 
 **Via SSH:**
 ```bash
 ssh wp-os-user@<pi-ip>
-# Set token for a slot via the CLI manager:
 sudo wp-os-bot-manager.sh token-set wos-1 YOUR_TOKEN
+sudo wp-os-bot-manager.sh list
 ```
 
 ---
@@ -77,24 +89,24 @@ sudo wp-os-bot-manager.sh token-set wos-1 YOUR_TOKEN
 
 ### Prerequisites
 
-Run on a Linux machine (not on the Pi itself). You need:
+Run on a Linux machine (not the Pi itself):
 ```bash
 sudo apt install wget xz-utils
 ```
 
 ### Configuration
 
-Edit `config.sh` before building to change credentials, bot repositories, or install paths. All values in the script are sourced from here.
+Edit `config.sh` to change credentials, bot repositories, or install paths before building.
 
 ### Build
 
 ```bash
 sudo ./build.sh
-# With --clean to re-download the base Ubuntu Pi image:
+# Force re-download of the base Ubuntu Pi image:
 sudo ./build.sh --clean
 ```
 
-The finished image is written to `output/wp-os-rpi-YYYYMMDD.img.xz`.
+Output: `output/wp-os-rpi-YYYYMMDD.img.xz`
 
 ---
 
@@ -104,13 +116,13 @@ The finished image is written to `output/wp-os-rpi-YYYYMMDD.img.xz`.
 wp-os-rpi/
 ├── config.sh                              Central configuration — edit this
 ├── build.sh                               Pi image builder
-├── update-token.sh                        Token update helper (run on the build machine)
 └── rootfs-overlay/
     └── usr/local/bin/
-        ├── wp-os-firstboot.sh           First-boot provisioning (runs once)
-        ├── wp-os-install-bot.sh         On-demand bot installer
-        ├── wp-os-bot-start.sh           Bot service launcher
-        └── wp-os-bot-manager.sh         CLI tool for token and slot management
+        ├── wp-os-firstboot.sh             First-boot provisioning (runs once)
+        ├── wp-os-install-bot.sh           On-demand bot installer
+        ├── wp-os-bot-start.sh             Bot service launcher
+        ├── wp-os-bot-manager.sh           CLI tool for token and slot management
+        └── wp-os-update.sh                OS self-update script
 ```
 
 ---
@@ -123,12 +135,16 @@ wp-os-rpi/
 | VNC | `<pi-ip>:5900` — password: `wpusr` |
 | Web panel | `http://<pi-ip>:8080` |
 
+> **Security:** The web panel and VNC are unencrypted. Keep ports 8080 and 5900 on a trusted local network only. For remote access use SSH port-forwarding:
+> ```bash
+> ssh -L 8080:localhost:8080 -L 5900:localhost:5900 wp-os-user@<pi-ip>
+> ```
+
 ---
 
 ## Notes
 
-- The Pi image is built on Ubuntu 24.04 Server (arm64+raspi)
-- Default bot is `wos-py` (Whiteout Survival Python edition)
+- Built on Ubuntu 24.04 Server (arm64 + raspi)
+- Default bot slot is `wos-py` (Whiteout Survival Python edition)
 - Switch bots via the web panel without reflashing
 - Change the default password after first boot: `passwd wp-os-user`
-- The web panel (`:8080`) and VNC (`:5900`) are **unencrypted**. Keep them on a trusted local network. Use SSH port-forwarding to access them securely from outside: `ssh -L 8080:localhost:8080 -L 5900:localhost:5900 wp-os-user@<pi-ip>`
