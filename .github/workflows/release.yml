@@ -64,7 +64,8 @@ jobs:
           [ -n "$_HOST" ] && sed -i "s|OS_HOSTNAME=\"wp-os-server\"|OS_HOSTNAME=\"${_HOST}\"|" wp-os-x86/config.sh || true
 
       - name: Build x86 ISO
-        run: cd wp-os-x86 && sudo ./build-iso.sh
+        working-directory: wp-os-x86
+        run: sudo bash ./build-iso.sh
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
@@ -117,7 +118,8 @@ jobs:
           [ -n "$_HOST" ] && sed -i "s|OS_HOSTNAME=\"wp-os-server\"|OS_HOSTNAME=\"${_HOST}\"|" wp-os-rpi/config.sh || true
 
       - name: Build RPi image
-        run: cd wp-os-rpi && sudo ./build.sh
+        working-directory: wp-os-rpi
+        run: sudo bash ./build.sh
 
       - name: Upload RPi artifact
         uses: actions/upload-artifact@v4

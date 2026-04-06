@@ -1,27 +1,71 @@
 # WhiteoutProjectOS
 
-A purpose-built operating system image for running Whiteout Survival and Kingshot Discord bots. Available for x86/64 (bare metal or Proxmox LXC) and Raspberry Pi.
+A plug-and-play OS for hosting Whiteout Survival and Kingshot Discord bots. Flash an image, power on, and your bot is running — no Linux knowledge required.
 
-# THIS IS FOR TESTING PURPOSE ONLY!!! 
-## It's still in development so bugs are expected
 ---
 
-## Pre-built Images
+## Download
 
-> **Download links will be added here.**
+**[→ Latest release](https://github.com/ikketim/os/releases/latest)**
 
-| Platform | Image | Notes |
+| Platform | File | Flash with |
 |---|---|---|
-| x86 / bare metal | `wp-os-x86-YYYYMMDD.iso` | Flash to USB, boot and it auto-installs |
-| Proxmox LXC | — | Use the builder script instead |
-| Raspberry Pi | `wp-os-rpi-YYYYMMDD.img.xz` | Flash to SD card or SSD |
+| **x86 / PC / VM / bare metal** | `wp-os-x86-*.iso` | [Rufus](https://rufus.ie) · [balenaEtcher](https://etcher.balena.io) · `dd` |
+| **Raspberry Pi 4 / 5 (arm64)** | `wp-os-rpi-*.img.xz` | [Raspberry Pi Imager](https://www.raspberrypi.com/software/) · `xz -dc … \| dd` |
 
-### Using a pre-built image
+Full flashing and first-boot instructions in the platform guides below.
 
-See the platform-specific README for full flashing and first-boot instructions:
+---
 
-- **x86 / Proxmox** → [`wp-os-x86/README.md`](wp-os-x86/README.md)
-- **Raspberry Pi** → [`wp-os-rpi/README.md`](wp-os-rpi/README.md)
+## Features
+
+- **Web control panel** — manage bots, tokens, and the system from a browser at `http://<ip>:8080`
+- **Multiple bot slots** — run several bots side by side on one device
+- **Token vault** — store spare tokens and assign them to slots in one click
+- **OS self-update** — update scripts and the web panel without reflashing (`System → OS Update`)
+- **SSH + VNC + XFCE desktop** — full remote access from day one
+
+---
+
+## Supported Bots
+
+| Bot | Type key | Notes |
+|---|---|---|
+| WOS Python | `wos-py` | Whiteout Survival — Python edition |
+| WOS JavaScript | `wos-js` | Whiteout Survival — JavaScript edition |
+| Kingshot | `kingshot` | Kingshot Discord Bot |
+| VoiceChat Counter | `voicechat` | [wos-voicechat-counter](https://github.com/ikketimnl/wos-voicechat-counter) — needs Client ID + Guild ID |
+
+---
+
+## Quick Start
+
+1. Download the image for your platform from the **[latest release](https://github.com/ikketim/os/releases/latest)**
+2. Flash it (see platform guide)
+3. Boot the device — first-boot setup runs automatically (~5–15 min)
+4. Open `http://<device-ip>:8080` in a browser
+5. Set your bot token in the **Tokens** tab and click **Save**
+
+---
+
+## Platform Guides
+
+- [Raspberry Pi (arm64)](wp-os-rpi/README.md)
+- [x86 / PC / VM / Proxmox LXC](wp-os-x86/README.md)
+
+---
+
+## Default Credentials
+
+> Change these after first boot.
+
+| | |
+|-|-|
+| Username | `wp-os-user` |
+| Password | `wpusr` |
+| Web panel | `http://<ip>:8080` |
+| SSH | `ssh wp-os-user@<ip>` |
+| VNC | `<ip>:5900` |
 
 ---
 
@@ -29,44 +73,17 @@ See the platform-specific README for full flashing and first-boot instructions:
 
 ```
 WhiteoutProjectOS/
-├── wp-os-x86/          x86 bare-metal ISO + Proxmox LXC builder
-└── wp-os-rpi/          Raspberry Pi image builder
+├── wp-os-x86/          x86 ISO builder + Proxmox LXC builder
+├── wp-os-rpi/          Raspberry Pi image builder
+└── .github/workflows/  Automated build & release (GitHub Actions)
 ```
 
 ---
 
-## Default Credentials
+## Security Note
 
-| | |
-|---|---|
-| Username | `wp-os-user` |
-| Password | `wpusr` |
-| SSH port | `22` |
-| VNC port | `5900` |
-| Web panel | `http://<ip>:8080` |
+The web panel (`:8080`) and VNC (`:5900`) are **unencrypted and unauthenticated**. Keep them on a trusted local network. For remote access use SSH port-forwarding:
 
-> Change the password after first boot: `passwd wp-os-user`
-
-> **Security:** The web panel runs over plain HTTP and VNC is unencrypted. Do not expose port 8080 or 5900 to the public internet. Access them over a local network or via SSH port-forwarding (`ssh -L 8080:localhost:8080 wp-os-user@<ip>`).
-
----
-
-## Web Control Panel
-
-Once the system is running, open `http://<ip>:8080` in your browser. The panel lets you:
-
-- Start / stop / restart the bot service
-- Save and update the bot token
-- Switch between bot flavours (WOS Python, WOS JS, Kingshot)
-- Toggle the desktop GUI on/off
-- View recent bot logs
-
----
-
-## Supported Bots
-
-| Bot | Language | Key |
-|---|---|---|
-| Whiteout Survival | Python | `wos-py` |
-| Whiteout Survival | Node.js 22 | `wos-js` |
-| Kingshot | Python | `kingshot` |
+```bash
+ssh -L 8080:localhost:8080 -L 5900:localhost:5900 wp-os-user@<ip>
+```

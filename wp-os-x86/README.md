@@ -1,6 +1,6 @@
 # WhiteoutProjectOS x86
 
-Runs on any x86/64 machine (bare metal, VM) via bootable ISO, or as a Proxmox LXC container.
+Runs on any x86-64 machine (bare metal, VM) via bootable ISO, or as a Proxmox LXC container.
 
 ---
 
@@ -8,11 +8,13 @@ Runs on any x86/64 machine (bare metal, VM) via bootable ISO, or as a Proxmox LX
 
 ### Requirements
 - A USB stick (4 GB or larger) or a VM with an ISO attached
-- The machine you are installing on has internet access
+- The machine has internet access on first boot
 
 ### 1. Download the ISO
 
-> **Download link will be added here.**
+**[→ Download from the latest release](https://github.com/ikketim/os/releases/latest)**
+
+Download the file named `wp-os-x86-*.iso`.
 
 ### 2. Flash the ISO to USB
 
@@ -23,7 +25,7 @@ sync
 ```
 Replace `/dev/sdX` with your USB device (check with `lsblk`).
 
-**Windows:**  
+**Windows:**
 Use [Rufus](https://rufus.ie/) or [balenaEtcher](https://etcher.balena.io/).
 
 ### 3. Boot and install
@@ -35,61 +37,26 @@ Use [Rufus](https://rufus.ie/) or [balenaEtcher](https://etcher.balena.io/).
 
 ### 4. First login
 
-After reboot the system is fully configured. Log in via:
+After reboot the system is fully configured:
 
 | Method | Details |
 |---|---|
-| SSH | `ssh wp-os-user@<ip>` |
+| SSH | `ssh wp-os-user@<ip>` — password: `wpusr` |
 | VNC | `<ip>:5900` — password: `wpusr` |
 | Web panel | `http://<ip>:8080` |
-| Desktop | Auto-login at the console / XFCE session |
+| Desktop | Auto-login to XFCE at the console |
 
 ### 5. Set your bot token
 
-Open the web panel at `http://<ip>:8080`, go to **Bot Token**, paste your token and click **Save & Restart**.
+Open `http://<ip>:8080`, go to the **Tokens** tab, paste your Discord bot token next to the default slot, and click **Save**.
+
+For VoiceChat bots, expand the slot card and fill in the **Client ID** and **Guild ID** fields before saving.
 
 ---
 
-## Using the Pre-built LXC Container (Proxmox)
+## Using Proxmox LXC
 
-> LXC image/template download link will be added here.
-
-If you prefer to build the LXC container yourself, see the **Build from Source** section below.
-
----
-
-## Build from Source
-
-### Prerequisites
-
-**For ISO builds:**
-```bash
-sudo apt install xorriso wget openssl p7zip-full
-```
-
-**For LXC builds:**  
-Run on a Proxmox host as root.
-
-### Configuration
-
-Edit `config.sh` to change credentials, bot repositories, or any install paths before building. All builder scripts source this file.
-
-### Build an ISO
-
-```bash
-sudo ./build-iso.sh
-# With --clean to re-download the base Ubuntu ISO:
-sudo ./build-iso.sh --clean
-```
-
-The finished ISO is written to `output/wp-os-x86-YYYYMMDD.iso`.
-
-**WSL2 users:**
-```bash
-sudo ./build-iso-wsl.sh
-```
-
-### Build a Proxmox LXC container
+Run on your Proxmox host as root:
 
 ```bash
 # Default: unprivileged container, DHCP, auto CTID
@@ -98,8 +65,51 @@ sudo ./build-lxc.sh
 # Custom CTID and static IP
 CT_IP="192.168.1.50/24" CT_GW="192.168.1.1" sudo ./build-lxc.sh --ctid 200
 
-# Privileged container (only if you have a specific reason)
+# Privileged container (only if required)
 sudo ./build-lxc.sh --unprivileged 0
+```
+
+---
+
+## OS Self-Update
+
+To update the web panel and bot scripts without reflashing, open the web panel → **System** → **OS Update**. This downloads the latest versions from the source repository.
+
+Via SSH:
+```bash
+sudo wp-os-update.sh
+```
+
+---
+
+## Build from Source
+
+### Prerequisites
+
+**ISO builds:**
+```bash
+sudo apt install xorriso wget openssl p7zip-full
+```
+
+**LXC builds:** Run on a Proxmox host as root.
+
+### Configuration
+
+Edit `config.sh` to change credentials, bot repositories, or install paths before building.
+
+### Build an ISO
+
+```bash
+sudo ./build-iso.sh
+# Force re-download of the base Ubuntu ISO:
+sudo ./build-iso.sh --clean
+```
+
+Output: `output/wp-os-x86-YYYYMMDD.iso`
+
+**WSL2:**
+```bash
+sudo ./build-iso-wsl.sh
 ```
 
 ---
@@ -109,21 +119,22 @@ sudo ./build-lxc.sh --unprivileged 0
 ```
 wp-os-x86/
 ├── config.sh                              Central configuration — edit this
-├── build-lxc.sh                           Proxmox LXC builder
+├── config-wsl.sh                          WSL2 variant of config.sh
 ├── build-iso.sh                           ISO builder (native Linux)
 ├── build-iso-wsl.sh                       ISO builder (WSL2)
-├── config-wsl.sh                          WSL2 variant of config.sh
+├── build-lxc.sh                           Proxmox LXC builder
 ├── iso-builder/
 │   ├── user-data                          Ubuntu autoinstall cloud-config
 │   └── meta-data                          Instance metadata
 ├── rootfs-overlay/
 │   ├── etc/systemd/system/
-│   │   └── wp-os-firstboot.service      Runs wp-os-provision.sh on first boot
+│   │   └── wp-os-firstboot.service        Runs wp-os-provision.sh on first boot
 │   └── usr/local/bin/
-│       ├── wp-os-provision.sh           Main provisioning script (templated)
-│       ├── wp-os-install-bot.sh         On-demand bot installer
-│       ├── wp-os-bot-start.sh           Bot service launcher
-│       └── wp-os-bot-manager.sh         CLI tool for token and slot management
+│       ├── wp-os-provision.sh             Main provisioning script (templated)
+│       ├── wp-os-install-bot.sh           On-demand bot installer
+│       ├── wp-os-bot-start.sh             Bot service launcher
+│       ├── wp-os-bot-manager.sh           CLI tool for token and slot management
+│       └── wp-os-update.sh                OS self-update script
 └── webserver/
     └── app.py                             Flask web control panel
 ```
@@ -138,17 +149,20 @@ wp-os-x86/
 | VNC | `<ip>:5900` — password: `wpusr` |
 | Web panel | `http://<ip>:8080` |
 
-> **Security:** The web panel and VNC are unencrypted. Keep ports 8080 and 5900 on a trusted local network only. Use SSH port-forwarding for remote access: `ssh -L 8080:localhost:8080 -L 5900:localhost:5900 wp-os-user@<ip>`
+> **Security:** The web panel and VNC are unencrypted. Keep ports 8080 and 5900 on a trusted local network only. For remote access use SSH port-forwarding:
+> ```bash
+> ssh -L 8080:localhost:8080 -L 5900:localhost:5900 wp-os-user@<ip>
+> ```
 
 ---
 
-## Updating the Bot Token
+## Managing Bot Tokens
 
-**Via the web panel:** `http://<ip>:8080` → Bot Token → Save & Restart
+**Via the web panel:** `http://<ip>:8080` → Tokens tab → Set / Assign
 
 **Via SSH:**
 ```bash
 ssh wp-os-user@<ip>
-# Set token for a slot via the CLI manager:
 sudo wp-os-bot-manager.sh token-set wos-1 YOUR_TOKEN
+sudo wp-os-bot-manager.sh list
 ```
