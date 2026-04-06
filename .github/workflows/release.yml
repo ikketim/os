@@ -66,6 +66,12 @@ jobs:
         working-directory: wp-os-x86
         run: sudo bash ./build-iso.sh
 
+      - name: Compress ISO (xz)
+        run: |
+          cd wp-os-x86/output
+          sudo xz -T0 -9 *.iso
+          ls -lh
+
       - name: Fix cache file permissions
         run: sudo chmod -R a+r wp-os-x86/build-tmp/ || true
 
@@ -73,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wp-os-x86-iso
-          path: wp-os-x86/output/*.iso
+          path: wp-os-x86/output/*.iso.xz
           retention-days: 3
 
   # ============================================================
@@ -178,7 +184,7 @@ jobs:
             ### Downloads
             | File | Target | Flash with |
             |------|--------|------------|
-            | `wp-os-x86-*.iso` | PC / VM / bare metal (x86-64) | [Rufus](https://rufus.ie) / [Balena Etcher](https://etcher.balena.io) / `dd` |
+            | `wp-os-x86-*.iso.xz` | PC / VM / bare metal (x86-64) | [Rufus](https://rufus.ie) / [Balena Etcher](https://etcher.balena.io) (both support `.xz` directly) / `xz -dc *.iso.xz \| sudo dd of=/dev/sdX bs=4M status=progress` |
             | `wp-os-rpi-*.img.xz` | Raspberry Pi 4 / 5 (arm64) | [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or `xz -dc *.img.xz \| sudo dd of=/dev/sdX bs=4M status=progress` |
 
             ### Default Credentials

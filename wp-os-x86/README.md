@@ -14,13 +14,13 @@ Runs on any x86-64 machine (bare metal, VM) via bootable ISO, or as a Proxmox LX
 
 **[→ Download from the latest release](https://github.com/ikketim/os/releases/latest)**
 
-Download the file named `wp-os-x86-*.iso`.
+Download the file named `wp-os-x86-*.iso.xz`.
 
 ### 2. Flash the ISO to USB
 
 **Linux / macOS:**
 ```bash
-sudo dd if=wp-os-x86-YYYYMMDD.iso of=/dev/sdX bs=4M status=progress
+xz -dc wp-os-x86-YYYYMMDD.iso.xz | sudo dd of=/dev/sdX bs=4M status=progress
 sync
 ```
 Replace `/dev/sdX` with your USB device (check with `lsblk`).
