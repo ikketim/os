@@ -2,7 +2,7 @@ name: Build & Release
 
 # Triggers:
 #   - Push a tag like v1.0.0  → builds both images and publishes a release
-#   - workflow_dispatch        → builds both images; optionally publishes a release
+#   - workflow_dispatch        → builds both images and publishes a release
 #
 # Optional secrets (Settings → Secrets → Actions):
 #   OS_PASSWORD   override default password  (default: wpusr)
@@ -15,14 +15,13 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      create_release:
-        description: 'Publish a GitHub Release after building'
-        type: boolean
-        default: false
       tag_name:
-        description: 'Release tag (e.g. v1.0.0) — required when creating a release'
-        required: false
+        description: 'Release tag (e.g. v1.0.0)'
+        required: true
         default: ''
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ============================================================
@@ -67,6 +66,9 @@ jobs:
         working-directory: wp-os-x86
         run: sudo bash ./build-iso.sh
 
+      - name: Fix cache file permissions
+        run: sudo chmod -R a+r wp-os-x86/build-tmp/ || true
+
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
@@ -104,7 +106,7 @@ jobs:
       - name: Cache base Ubuntu RPi image
         uses: actions/cache@v4
         with:
-          path: wp-os-rpi/build-tmp/ubuntu-raspi-base.img
+          path: wp-os-rpi/build-tmp/ubuntu-raspi-base.img.xz
           key: ubuntu-raspi-img-24.04
 
       - name: Patch credentials from secrets
@@ -120,6 +122,9 @@ jobs:
       - name: Build RPi image
         working-directory: wp-os-rpi
         run: sudo bash ./build.sh
+
+      - name: Fix cache file permissions
+        run: sudo chmod -R a+r wp-os-rpi/build-tmp/ || true
 
       - name: Upload RPi artifact
         uses: actions/upload-artifact@v4
@@ -137,9 +142,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: >
-      startsWith(github.ref, 'refs/tags/') ||
-      (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
 
     steps:
       - name: Download all artifacts
@@ -156,12 +158,17 @@ jobs:
           else
             TAG="${{ inputs.tag_name }}"
           fi
+          if [ -z "$TAG" ]; then
+            echo "ERROR: No tag specified. Provide a tag_name input or push a v* tag." >&2
+            exit 1
+          fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ steps.vars.outputs.tag }}
           name: WhiteoutProjectOS ${{ steps.vars.outputs.tag }}
           body: |
