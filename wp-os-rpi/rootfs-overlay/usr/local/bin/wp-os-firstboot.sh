@@ -68,7 +68,7 @@ apt-get upgrade -y -qq --no-install-recommends
 echo "[4/13] Installing core packages..."
 apt-get install -y -qq --no-install-recommends \
   python3 python3-full python3-venv python3-pip \
-  wget curl git ca-certificates \
+  wget curl git ca-certificates gnupg \
   openssh-server python3-flask \
   feh jq net-tools unzip xdotool
 
