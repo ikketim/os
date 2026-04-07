@@ -10,7 +10,7 @@ A plug-and-play OS for hosting Whiteout Survival and Kingshot Discord bots. Flas
 
 | Platform | File | Flash with |
 |---|---|---|
-| **x86 / PC / VM / bare metal** | `wp-os-x86-*.iso` | [Rufus](https://rufus.ie) · [balenaEtcher](https://etcher.balena.io) · `dd` |
+| **x86 / PC / VM / bare metal** | `wp-os-x86-*.iso.xz` | [Rufus](https://rufus.ie) · [balenaEtcher](https://etcher.balena.io) · `xz -dc … \| dd` |
 | **Raspberry Pi 4 / 5 (arm64)** | `wp-os-rpi-*.img.xz` | [Raspberry Pi Imager](https://www.raspberrypi.com/software/) · `xz -dc … \| dd` |
 
 Full flashing and first-boot instructions in the platform guides below.

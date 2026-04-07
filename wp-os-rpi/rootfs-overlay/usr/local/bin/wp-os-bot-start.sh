@@ -38,9 +38,10 @@ case "$BOT_TYPE" in
 
   wos-js)
     cd "${APP_DIR}/src"
-    printf 'TOKEN=%s\n' "$TOKEN" > "${APP_DIR}/src/.env"
-    chmod 600 "${APP_DIR}/src/.env"
-    exec /usr/bin/node "${APP_DIR}/src/src/index.js"
+    mkdir -p "${APP_DIR}/src/src"
+    printf 'TOKEN=%s\n' "$TOKEN" > "${APP_DIR}/src/src/.env"
+    chmod 600 "${APP_DIR}/src/src/.env"
+    exec /usr/bin/node "${APP_DIR}/src/starter.js"
     ;;
 
   kingshot)
