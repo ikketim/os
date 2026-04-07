@@ -25,6 +25,7 @@ BOT_TYPE="${2:-}"
 SLOT_DIR="${BOTS_DIR}/${SLOT_ID}"
 APP_DIR="${SLOT_DIR}/app"
 mkdir -p "$APP_DIR"
+chown "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
 
 install_wos_py() {
   info "Installing WOS Python bot into ${SLOT_DIR}/app ..."
@@ -43,6 +44,7 @@ install_wos_py() {
 
 install_wos_js() {
   info "Installing WOS JavaScript bot into ${SLOT_DIR}/app ..."
+  rm -rf "${APP_DIR}/src"
   cd "$APP_DIR"
   git clone --depth 1 --branch "$BOT_JS_BRANCH" "$BOT_JS_REPO" src \
     || error "Failed to clone ${BOT_JS_REPO}"
@@ -54,6 +56,7 @@ install_wos_js() {
 
 install_kingshot() {
   info "Installing Kingshot bot into ${SLOT_DIR}/app ..."
+  find "${APP_DIR}" -mindepth 1 -delete
   cd "$APP_DIR"
   git clone --depth 1 --branch "$BOT_KINGSHOT_BRANCH" "$BOT_KINGSHOT_REPO" . \
     || error "Failed to clone ${BOT_KINGSHOT_REPO}"
@@ -71,6 +74,7 @@ install_kingshot() {
 
 install_voicechat() {
   info "Installing WOS VoiceChat Counter into ${SLOT_DIR}/app ..."
+  find "${APP_DIR}" -mindepth 1 -delete
   cd "$APP_DIR"
   git clone --depth 1 --branch "$BOT_VOICECHAT_BRANCH" "$BOT_VOICECHAT_REPO" . \
     || error "Failed to clone ${BOT_VOICECHAT_REPO}"
