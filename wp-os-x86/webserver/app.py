@@ -310,6 +310,7 @@ def api_slot_install(slot_id):
             m = _read_json(meta_f, {})
             m["installed"] = True
             _write_json(meta_f, m)
+            os.chmod(meta_f, 0o644)  # world-readable: wp-os-user reads this at bot start
         else:
             logging.warning("Install script for slot %s exited with rc=%d", slot_id, proc.returncode)
         with _procs_lock:
