@@ -50,7 +50,7 @@ install_wos_js() {
     || error "Failed to clone ${BOT_JS_REPO}"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "${APP_DIR}/src"
   cd "${APP_DIR}/src"
-  sudo -u "$OS_USERNAME" npm install --silent || error "npm install failed"
+  sudo -u "$OS_USERNAME" npm install || error "npm install failed"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
 }
 
@@ -79,7 +79,7 @@ install_voicechat() {
   git clone --depth 1 --branch "$BOT_VOICECHAT_BRANCH" "$BOT_VOICECHAT_REPO" . \
     || error "Failed to clone ${BOT_VOICECHAT_REPO}"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
-  sudo -u "$OS_USERNAME" npm install --silent || error "npm install failed"
+  sudo -u "$OS_USERNAME" npm install || error "npm install failed"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
 }
 

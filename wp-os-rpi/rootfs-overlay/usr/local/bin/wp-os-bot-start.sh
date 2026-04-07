@@ -37,10 +37,10 @@ case "$BOT_TYPE" in
     ;;
 
   wos-js)
+    [ -d "${APP_DIR}/src" ] || { echo "ERROR: wos-js not installed — run Install from the web panel" >&2; exit 1; }
     cd "${APP_DIR}/src"
-    mkdir -p "${APP_DIR}/src/src"
-    printf 'TOKEN=%s\n' "$TOKEN" > "${APP_DIR}/src/src/.env"
-    chmod 600 "${APP_DIR}/src/src/.env"
+    printf 'TOKEN=%s\n' "$TOKEN" > src/src/.env
+    chmod 600 src/src/.env
     exec npm start
     ;;
 
