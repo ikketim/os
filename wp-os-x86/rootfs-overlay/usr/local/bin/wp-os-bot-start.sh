@@ -41,7 +41,7 @@ case "$BOT_TYPE" in
     mkdir -p "${APP_DIR}/src/src"
     printf 'TOKEN=%s\n' "$TOKEN" > "${APP_DIR}/src/src/.env"
     chmod 600 "${APP_DIR}/src/src/.env"
-    exec /usr/bin/node "${APP_DIR}/src/starter.js"
+    exec npm start
     ;;
 
   kingshot)
@@ -64,7 +64,7 @@ case "$BOT_TYPE" in
     jq -n --arg token "$TOKEN" --arg clientId "$CLIENT_ID" --arg guildId "$GUILD_ID" \
       '{"token":$token,"clientId":$clientId,"guildId":$guildId}' > "${APP_DIR}/config.json"
     chmod 600 "${APP_DIR}/config.json"
-    exec /usr/bin/node "${APP_DIR}/index.js"
+    exec npm start
     ;;
 
   *)
