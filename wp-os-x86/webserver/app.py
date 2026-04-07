@@ -318,6 +318,22 @@ def api_slot_install(slot_id):
     threading.Thread(target=_wait, daemon=True).start()
     return jsonify({"ok": True, "log": log_file})
 
+@app.route("/api/slots/<slot_id>/logs", methods=["GET"])
+def api_slot_logs(slot_id):
+    if not re.match(r'^[a-zA-Z0-9_-]+$', slot_id):
+        return jsonify({"error": "Invalid slot ID"}), 400
+    n = min(int(request.args.get("n", 100)), 500)
+    try:
+        r = subprocess.run(
+            ["journalctl", "-u", f"wp-os-bot@{slot_id}",
+             "-n", str(n), "--no-pager", "--output=short-iso"],
+            capture_output=True, text=True, timeout=10, check=False
+        )
+        lines = r.stdout.splitlines()
+        return jsonify({"lines": lines})
+    except Exception as e:
+        return jsonify({"error": str(e), "lines": []})
+
 @app.route("/api/slots/<slot_id>/status", methods=["GET"])
 def api_slot_status(slot_id):
     slot_dir = BOTS_DIR / slot_id
@@ -698,6 +714,9 @@ td{padding:8px 12px;border-bottom:1px solid #1e2135}
 tr:last-child td{border-bottom:none}
 .log-box{background:#070a0f;border:1px solid #1e2135;border-radius:8px;padding:12px;font-family:'Courier New',monospace;font-size:.78rem;color:#94a3b8;max-height:340px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
 .install-log{margin-top:10px}
+.bot-log{margin-top:10px;display:none}
+.bot-log.open{display:block}
+.log-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-size:.8rem;color:#64748b}
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid #4f46e5;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .sys-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px}
@@ -834,6 +853,7 @@ function slotCard(s){
     <button class="btn-warning btn-sm" onclick="slotAct('${s.slot_id}','restart')">Restart</button>
     ${installBtn}
     <button class="btn-danger btn-sm" onclick="removeSlot('${s.slot_id}')">Remove</button>
+    <button class="btn-secondary btn-sm" onclick="toggleLog('${s.slot_id}',this)">Logs</button>
   </div>
   ${s.type==='voicechat'?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #2d3148">
     <div style="font-size:.82rem;color:#94a3b8;margin-bottom:6px">VoiceChat Config</div>
@@ -845,6 +865,13 @@ function slotCard(s){
     <div id="vc-msg-${s.slot_id}" style="font-size:.8rem;margin-top:6px"></div>
   </div>`:''}
   <div id="install-log-${s.slot_id}" class="install-log"></div>
+  <div id="bot-log-${s.slot_id}" class="bot-log">
+    <div class="log-header">
+      <span>journald log — <span id="bot-log-count-${s.slot_id}">last 100 lines</span></span>
+      <button class="btn-secondary btn-sm" onclick="refreshLog('${s.slot_id}')">Refresh</button>
+    </div>
+    <div class="log-box" id="bot-log-box-${s.slot_id}"></div>
+  </div>
 </div>`;
 }
 
@@ -1062,6 +1089,32 @@ async function runUpdate(){
       btn.disabled=false;btn.textContent='Check & Apply Updates';
     }
   },2000);
+}
+
+// Bot log viewer
+const _logPolls={};
+
+async function refreshLog(sid){
+  const box=document.getElementById(`bot-log-box-${sid}`);
+  if(!box) return;
+  const d=await api('GET',`/slots/${sid}/logs`);
+  const lines=d.lines||[];
+  box.textContent=lines.length?lines.join('\n'):'(no log entries yet)';
+  box.scrollTop=box.scrollHeight;
+  document.getElementById(`bot-log-count-${sid}`).textContent=`${lines.length} lines`;
+}
+
+function toggleLog(sid,btn){
+  const panel=document.getElementById(`bot-log-${sid}`);
+  const open=panel.classList.toggle('open');
+  btn.textContent=open?'Hide Logs':'Logs';
+  if(open){
+    refreshLog(sid);
+    if(!_logPolls[sid]) _logPolls[sid]=setInterval(()=>refreshLog(sid),4000);
+  } else {
+    clearInterval(_logPolls[sid]);
+    delete _logPolls[sid];
+  }
 }
 
 // Init
