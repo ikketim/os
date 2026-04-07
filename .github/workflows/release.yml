@@ -1,8 +1,8 @@
 name: Build & Release
 
 # Triggers:
-#   - Push a tag like v1.0.0  → builds both images and publishes a release
-#   - workflow_dispatch        → builds both images and publishes a release
+#   - Push a tag like v1.0.0  → builds all images and publishes a release
+#   - workflow_dispatch        → builds all images and publishes a release
 #
 # Optional secrets (Settings → Secrets → Actions):
 #   OS_PASSWORD   override default password  (default: wpusr)
@@ -140,11 +140,65 @@ jobs:
           retention-days: 3
 
   # ============================================================
+  # LXC / Incus image
+  # ============================================================
+  build-lxc:
+    name: Build LXC Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y debootstrap systemd-container xz-utils
+          sudo apt-get clean
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Patch credentials from secrets
+        env:
+          _PASS: ${{ secrets.OS_PASSWORD }}
+          _USER: ${{ secrets.OS_USERNAME }}
+          _HOST: ${{ secrets.OS_HOSTNAME }}
+        run: |
+          [ -n "$_PASS" ] && sed -i "s|OS_PASSWORD=\"wpusr\"|OS_PASSWORD=\"${_PASS}\"|" wp-os-x86/config.sh || true
+          [ -n "$_USER" ] && sed -i "s|OS_USERNAME=\"wp-os-user\"|OS_USERNAME=\"${_USER}\"|" wp-os-x86/config.sh || true
+          [ -n "$_HOST" ] && sed -i "s|OS_HOSTNAME=\"wp-os-server\"|OS_HOSTNAME=\"${_HOST}\"|" wp-os-x86/config.sh || true
+
+      - name: Build LXC image
+        working-directory: wp-os-x86
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: sudo -E bash ./build-lxc-image.sh
+
+      - name: Upload LXC artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp-os-x86-lxc
+          path: wp-os-x86/output-lxc/
+          retention-days: 3
+
+  # ============================================================
   # GitHub Release
   # ============================================================
   release:
     name: Create Release
-    needs: [build-x86, build-rpi]
+    needs: [build-x86, build-rpi, build-lxc]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -182,10 +236,27 @@ jobs:
             Built on ${{ steps.vars.outputs.date }}
 
             ### Downloads
-            | File | Target | Flash with |
+            | File | Target | How to use |
             |------|--------|------------|
-            | `wp-os-x86-*.iso.xz` | PC / VM / bare metal (x86-64) | [Rufus](https://rufus.ie) / [Balena Etcher](https://etcher.balena.io) (both support `.xz` directly) / `xz -dc *.iso.xz \| sudo dd of=/dev/sdX bs=4M status=progress` |
+            | `wp-os-x86-*.iso.xz` | PC / VM / bare metal (x86-64) | [Rufus](https://rufus.ie) / [Balena Etcher](https://etcher.balena.io) / `xz -dc *.iso.xz \| sudo dd of=/dev/sdX bs=4M status=progress` |
             | `wp-os-rpi-*.img.xz` | Raspberry Pi 4 / 5 (arm64) | [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or `xz -dc *.img.xz \| sudo dd of=/dev/sdX bs=4M status=progress` |
+            | `wp-os-x86-*-lxc-rootfs.tar.xz` + `wp-os-x86-*-lxc-metadata.tar.xz` | Proxmox LXC / Incus / LXD | See LXC import instructions below |
+
+            ### LXC / Incus Import
+            ```bash
+            # Download both files, then:
+
+            # LXD / Incus:
+            lxc image import wp-os-x86-${{ steps.vars.outputs.tag }}-lxc-metadata.tar.xz \
+                              wp-os-x86-${{ steps.vars.outputs.tag }}-lxc-rootfs.tar.xz \
+                              --alias wp-os
+            lxc launch wp-os my-wp-container
+
+            # Proxmox (import as CT template):
+            # Upload both files to your Proxmox host, then:
+            pct restore <CTID> wp-os-x86-${{ steps.vars.outputs.tag }}-lxc-rootfs.tar.xz \
+              --storage local-lvm --hostname wp-os-server --memory 2048 --cores 2
+            ```
 
             ### Default Credentials
             > ⚠️ **Change these before exposing the device to any network you don't fully control.**
