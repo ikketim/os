@@ -1,3 +1,4 @@
+[![Build & Release](https://github.com/ikketim/os/actions/workflows/release.yml/badge.svg)](https://github.com/ikketim/os/actions/workflows/release.yml)
 # WhiteoutProjectOS
 
 A plug-and-play OS for hosting Whiteout Survival and Kingshot Discord bots. Flash an image, power on, and your bot is running — no Linux knowledge required.
