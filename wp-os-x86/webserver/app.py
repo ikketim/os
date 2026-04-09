@@ -662,154 +662,235 @@ SINGLE_PAGE_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WhiteoutProjectOS Control Panel</title>
+<title>WhiteoutProjectOS</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
-header{background:#1a1d27;border-bottom:1px solid #2d3148;padding:14px 24px;display:flex;align-items:center;gap:16px}
-header h1{font-size:1.1rem;font-weight:600;color:#7c85f5}
-header span{font-size:.8rem;color:#64748b}
-nav{display:flex;gap:4px;padding:12px 24px;background:#13151f;border-bottom:1px solid #1e2135}
-nav button{padding:7px 18px;border:none;border-radius:6px;cursor:pointer;font-size:.9rem;background:transparent;color:#94a3b8;transition:.15s}
-nav button.active{background:#2d3148;color:#e2e8f0}
-nav button:hover:not(.active){background:#1e2135;color:#e2e8f0}
-.page{display:none;padding:24px;max-width:1100px}
-.page.active{display:block}
-h2{font-size:1rem;font-weight:600;margin-bottom:16px;color:#c7d2fe}
-.card{background:#1a1d27;border:1px solid #2d3148;border-radius:10px;padding:18px;margin-bottom:16px}
-.slot-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.slot-id{font-weight:700;font-size:.95rem}
-.badge{padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600}
-.badge-wos-py{background:#1e3a5f;color:#60a5fa}
-.badge-wos-js{background:#1a3a2a;color:#4ade80}
-.badge-kingshot{background:#3a1a1a;color:#f87171}
-.badge-voicechat{background:#2a1a3a;color:#c084fc}
-.badge-active{background:#14532d;color:#4ade80}
-.badge-inactive{background:#1c1c1c;color:#6b7280}
-.badge-failed{background:#450a0a;color:#f87171}
-.badge-unknown{background:#1c1c1c;color:#6b7280}
-.slot-label{color:#94a3b8;font-size:.9rem}
-.slot-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-button{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:500;transition:.15s}
-.btn-primary{background:#4f46e5;color:#fff}
-.btn-primary:hover{background:#4338ca}
-.btn-success{background:#16a34a;color:#fff}
-.btn-success:hover{background:#15803d}
-.btn-danger{background:#dc2626;color:#fff}
-.btn-danger:hover{background:#b91c1c}
-.btn-warning{background:#d97706;color:#fff}
-.btn-warning:hover{background:#b45309}
-.btn-secondary{background:#374151;color:#e2e8f0}
-.btn-secondary:hover{background:#4b5563}
-.btn-sm{padding:4px 10px;font-size:.78rem}
-.warn-banner{background:#422006;border:1px solid #854d0e;color:#fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.85rem}
-.err-banner{background:#450a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.85rem}
-.ok-banner{background:#052e16;border:1px solid #166534;color:#86efac;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.85rem}
-form{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px}
-label{font-size:.82rem;color:#94a3b8;display:flex;flex-direction:column;gap:4px}
-input,select,textarea{background:#0f1117;border:1px solid #2d3148;border-radius:6px;color:#e2e8f0;padding:7px 10px;font-size:.88rem;min-width:160px}
-input:focus,select:focus,textarea:focus{outline:none;border-color:#4f46e5}
-table{width:100%;border-collapse:collapse;font-size:.88rem}
-th{text-align:left;padding:8px 12px;color:#64748b;font-weight:500;border-bottom:1px solid #2d3148}
-td{padding:8px 12px;border-bottom:1px solid #1e2135}
-tr:last-child td{border-bottom:none}
-.log-box{background:#070a0f;border:1px solid #1e2135;border-radius:8px;padding:12px;font-family:'Courier New',monospace;font-size:.78rem;color:#94a3b8;max-height:340px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
-.install-log{margin-top:10px}
-.bot-log{margin-top:10px;display:none}
-.bot-log.open{display:block}
-.log-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-size:.8rem;color:#64748b}
-.spinner{display:inline-block;width:12px;height:12px;border:2px solid #4f46e5;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cdd6f4;min-height:100vh}
+.wp-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:#172643;position:relative}
+.wp-hdr::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)}
+.wp-logo{display:flex;align-items:center;gap:12px}
+.wp-logo-icon{width:48px;height:48px;border:1px solid #cdd6f4;border-radius:10px;display:grid;place-items:center;font-size:13px;color:#00c8ff;font-weight:700;font-family:'Share Tech Mono',monospace;letter-spacing:1px}
+.wp-logo-text{font-size:17px;font-weight:600;letter-spacing:2px;color:#cdd6f4}
+.wp-logo-text span{color:#00c8ff}
+.wp-hdr-right{display:flex;align-items:center;gap:8px;font-size:13px;color:#25d79d}
+.wp-dot{width:8px;height:8px;border-radius:50%;background:#00e676;box-shadow:0 0 8px #00e676;flex-shrink:0}
+.wp-nav{display:flex;gap:4px;padding:14px 32px;background:#172643;border-bottom:1px solid #1e2a3a}
+.wp-nav button{padding:8px 22px;border:none;border-radius:6px;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;background:transparent;color:#6c7a96;transition:.15s}
+.wp-nav button.active{background:#283d66;color:#cdd6f4;border:1px solid #1e2a3a}
+.wp-nav button:hover:not(.active){color:#cdd6f4}
+.wp-main{max-width:1100px;margin:0 auto;padding:28px 24px}
+.wp-page{display:none}
+.wp-page.active{display:block}
+.wp-card{background:#283d66;border:1px solid #1e2a3a;border-radius:6px;padding:20px 22px;margin-bottom:16px;position:relative;overflow:hidden}
+.wp-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#00c8ff,transparent)}
+.wp-card-title{font-size:11px;font-weight:700;letter-spacing:3px;color:#c2e9ff;text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:7px}
+.wp-ic{color:#00c8ff;font-size:14px}
+.wp-pill{font-family:'Share Tech Mono',monospace;font-size:11px;padding:3px 9px;border-radius:20px;letter-spacing:1px}
+.wp-pill-active{background:rgba(0,230,118,.14);color:#00e676}
+.wp-pill-inactive{background:rgba(255,255,255,.06);color:#6c7a96}
+.wp-pill-failed{background:rgba(255,23,68,.14);color:#ff1744}
+.wp-pill-activating{background:rgba(255,107,53,.14);color:#ff6b35}
+.wp-pill-unknown{background:rgba(255,255,255,.06);color:#6c7a96}
+.wp-type-tag{font-size:10px;padding:2px 6px;border-radius:3px;font-family:'Share Tech Mono',monospace;letter-spacing:.5px}
+.wp-tag-py{background:rgba(0,200,255,.14);color:#00c8ff}
+.wp-tag-js{background:rgba(255,234,0,.12);color:#ffea00}
+.wp-tag-ks{background:rgba(255,107,53,.14);color:#ff6b35}
+.wp-tag-vc{background:rgba(200,130,255,.14);color:#c882ff}
+.wp-token-mask{font-family:'Share Tech Mono',monospace;font-size:11px;color:#6c7a96;margin-left:auto}
+.wp-token-mask.has-token{color:#00e676}
+.wp-not-installed{background:rgba(255,107,53,.08);border:1px solid rgba(255,107,53,.3);border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:12px;color:#ff9966}
+.wp-not-installed span{flex:1}
+.wp-btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.wp-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 16px;border:none;border-radius:6px;font-family:'Exo 2',sans-serif;font-size:11px;font-weight:600;letter-spacing:1px;cursor:pointer;text-transform:uppercase;transition:.15s}
+.wp-btn-success{background:#00e676;color:#000}
+.wp-btn-success:hover{background:#00d068}
+.wp-btn-danger{background:#ff1744;color:#fff}
+.wp-btn-danger:hover{background:#e0102f}
+.wp-btn-warn{background:#ff6b35;color:#000}
+.wp-btn-warn:hover{background:#e55c28}
+.wp-btn-primary{background:#00c8ff;color:#000}
+.wp-btn-primary:hover{background:#00aee0}
+.wp-btn-ghost{background:transparent;color:#cdd6f4;border:1px solid #1e2a3a}
+.wp-btn-ghost:hover{border-color:#00c8ff;color:#00c8ff}
+.wp-btn:disabled{opacity:.45;cursor:not-allowed}
+.wp-inp{background:rgba(0,0,0,.35);border:1px solid #1e2a3a;border-radius:6px;color:#cdd6f4;padding:8px 12px;font-family:'Share Tech Mono',monospace;font-size:12px;width:100%}
+.wp-inp:focus{outline:none;border-color:#00c8ff}
+.wp-inp::placeholder{color:#3c4e6a}
+select.wp-inp{cursor:pointer}
+.wp-form-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px}
+.wp-form-group{display:flex;flex-direction:column;gap:5px;min-width:140px}
+.wp-form-label{font-size:11px;letter-spacing:2px;color:#6c7a96;text-transform:uppercase}
+.wp-banner-err{background:rgba(255,23,68,.1);border:1px solid rgba(255,23,68,.3);color:#ff5a7a;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px}
+.wp-banner-ok{background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.25);color:#00e676;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px}
+.wp-banner-warn{background:rgba(255,107,53,.08);border:1px solid rgba(255,107,53,.25);color:#ff9966;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px}
+.wp-log-box{background:rgba(5,8,16,.5);border:1px solid #1e2a3a;border-radius:6px;padding:12px;font-family:'Share Tech Mono',monospace;font-size:11.5px;line-height:1.6;color:#b6e8ff;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.wp-bot-log{display:none;margin-top:10px}
+.wp-bot-log.open{display:block}
+.wp-install-log{margin-top:10px}
+.wp-table{width:100%;border-collapse:collapse;font-size:12px}
+.wp-table th{text-align:left;padding:8px 12px;color:#6c7a96;font-weight:700;letter-spacing:2px;text-transform:uppercase;font-size:10px;border-bottom:1px solid #1e2a3a}
+.wp-table td{padding:10px 12px;border-bottom:1px solid rgba(30,42,58,.5);vertical-align:middle}
+.wp-table tr:last-child td{border-bottom:none}
+.wp-sys-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.wp-sys-tile{background:rgba(0,0,0,.25);border:1px solid #1e2a3a;border-radius:6px;padding:14px}
+.wp-sys-tile .lbl{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#6c7a96;margin-bottom:6px}
+.wp-sys-tile .val{font-family:'Share Tech Mono',monospace;font-size:14px;color:#cdd6f4}
+.wp-vc-section{margin-top:12px;padding-top:12px;border-top:1px solid #1e2a3a}
+.wp-vc-label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#6c7a96;margin-bottom:10px}
+.wp-section-lbl{font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#6c7a96;margin:20px 0 10px;padding-bottom:8px;border-bottom:1px solid #1e2a3a}
+.wp-bot-opt{display:flex;align-items:flex-start;gap:10px;padding:10px 13px;border:1px solid #1e2a3a;border-radius:6px;margin-bottom:8px;cursor:pointer;transition:.15s}
+.wp-bot-opt:hover{border-color:#00c8ff;background:rgba(0,200,255,.04)}
+.wp-bot-radio{width:14px;height:14px;border-radius:50%;border:2px solid #3c4e6a;margin-top:2px;flex-shrink:0;transition:.15s}
+.wp-bot-opt.sel .wp-bot-radio{border-color:#00c8ff;background:#00c8ff;box-shadow:0 0 6px #00c8ff}
+.wp-bot-opt.sel{border-color:#00c8ff;background:rgba(0,200,255,.06)}
+.wp-bot-opt-name{font-size:13px;font-weight:600;color:#cdd6f4}
+.wp-bot-opt-desc{font-size:11px;color:#aee5ff;margin-top:3px}
+.wp-spin{display:inline-block;width:12px;height:12px;border:2px solid #00c8ff;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
-.sys-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px}
-.sys-card{background:#13151f;border:1px solid #2d3148;border-radius:8px;padding:14px}
-.sys-card .label{font-size:.78rem;color:#64748b;margin-bottom:4px}
-.sys-card .value{font-size:1rem;font-weight:600;color:#e2e8f0}
-.section-title{font-size:.9rem;font-weight:600;color:#94a3b8;margin:18px 0 10px;border-bottom:1px solid #2d3148;padding-bottom:6px}
 </style>
 </head>
 <body>
-<header>
-  <h1>WhiteoutProjectOS</h1>
-  <span>Control Panel</span>
-</header>
-<nav>
-  <button class="active" onclick="showTab('bots',this)">Bots</button>
-  <button onclick="showTab('tokens',this)">Tokens</button>
-  <button onclick="showTab('system',this)">System</button>
-</nav>
 
-<div id="bots" class="page active">
-  <h2>Bot Slots</h2>
-  <div id="bots-banners"></div>
-  <div id="bots-list"></div>
-  <div class="card">
-    <div style="font-weight:600;margin-bottom:12px;color:#c7d2fe">Add New Slot</div>
-    <div id="add-slot-warn"></div>
-    <form id="add-slot-form" onsubmit="createSlot(event)">
-      <label>Slot ID<input id="new-sid" placeholder="wos-2, kingshot-1…" required></label>
-      <label>Bot Type
-        <select id="new-type" onchange="suggestSlotId()">
-          <option value="wos-py">WOS Python (wos-py)</option>
-          <option value="wos-js">WOS JavaScript (wos-js)</option>
-          <option value="kingshot">Kingshot</option>
-          <option value="voicechat">VoiceChat Counter</option>
-        </select>
-      </label>
-      <label>Label<input id="new-label" placeholder="My Bot" required></label>
-      <button type="submit" class="btn-primary">Create Slot</button>
-    </form>
+<div class="wp-hdr">
+  <div class="wp-logo">
+    <div class="wp-logo-icon">WP</div>
+    <div class="wp-logo-text">WhiteoutProject<span>OS</span></div>
+  </div>
+  <div class="wp-hdr-right">
+    <div class="wp-dot"></div>
+    <span>Running</span>
   </div>
 </div>
 
-<div id="tokens" class="page">
-  <h2>Token Management</h2>
+<nav class="wp-nav">
+  <button class="active" onclick="showTab('bots',this)">⚡ Bots</button>
+  <button onclick="showTab('tokens',this)">🔑 Tokens</button>
+  <button onclick="showTab('system',this)">🖥 System</button>
+</nav>
+
+<div class="wp-main">
+
+<!-- BOTS -->
+<div id="bots" class="wp-page active">
+  <div id="bots-banners"></div>
+  <div id="bots-list"></div>
+  <div class="wp-card">
+    <div class="wp-card-title"><span class="wp-ic">＋</span> Add Bot Slot</div>
+    <p style="font-size:12px;color:#aee5ff;margin-bottom:14px">New slots are <strong style="color:#cdd6f4">not installed automatically</strong> — after creating, click <span style="color:#00c8ff">Install</span> on the slot card to download and set up the bot.</p>
+    <div id="add-slot-warn"></div>
+    <div class="wp-section-lbl">Choose Bot Type</div>
+    <div id="bot-type-picker">
+      <div class="wp-bot-opt sel" onclick="pickBotType('wos-py',this)">
+        <div class="wp-bot-radio"></div>
+        <div>
+          <div class="wp-bot-opt-name">Whiteout Survival <span class="wp-type-tag wp-tag-py">PYTHON</span></div>
+          <div class="wp-bot-opt-desc">Alliance management, gift codes &amp; event notifications — Python edition</div>
+        </div>
+      </div>
+      <div class="wp-bot-opt" onclick="pickBotType('wos-js',this)">
+        <div class="wp-bot-radio"></div>
+        <div>
+          <div class="wp-bot-opt-name">Whiteout Survival <span class="wp-type-tag wp-tag-js">NODE 22</span></div>
+          <div class="wp-bot-opt-desc">JavaScript/TypeScript edition</div>
+        </div>
+      </div>
+      <div class="wp-bot-opt" onclick="pickBotType('kingshot',this)">
+        <div class="wp-bot-radio"></div>
+        <div>
+          <div class="wp-bot-opt-name">Kingshot <span class="wp-type-tag wp-tag-ks">PYTHON</span></div>
+          <div class="wp-bot-opt-desc">Alliance management, gift codes &amp; events for Kingshot</div>
+        </div>
+      </div>
+      <div class="wp-bot-opt" onclick="pickBotType('voicechat',this)">
+        <div class="wp-bot-radio"></div>
+        <div>
+          <div class="wp-bot-opt-name">VoiceChat Counter <span class="wp-type-tag wp-tag-vc">NODE 22</span></div>
+          <div class="wp-bot-opt-desc">Live voice channel member counter display</div>
+        </div>
+      </div>
+    </div>
+    <div class="wp-form-row" style="margin-top:14px">
+      <div class="wp-form-group" style="flex:1;min-width:150px">
+        <span class="wp-form-label">Slot ID</span>
+        <input class="wp-inp" id="new-sid" placeholder="wos-2, kingshot-1…">
+      </div>
+      <div class="wp-form-group" style="flex:1;min-width:150px">
+        <span class="wp-form-label">Display Name</span>
+        <input class="wp-inp" id="new-label" placeholder="My Bot">
+      </div>
+      <button class="wp-btn wp-btn-primary" onclick="createSlot()" style="align-self:flex-end">Create Slot</button>
+    </div>
+    <input type="hidden" id="new-type" value="wos-py">
+  </div>
+</div>
+
+<!-- TOKENS -->
+<div id="tokens" class="wp-page">
   <div id="tokens-msg"></div>
-  <div class="section-title">Active Tokens</div>
-  <div class="card"><table id="active-tokens-table">
-    <thead><tr><th>Slot</th><th>Type</th><th>Label</th><th>Token</th><th>Actions</th></tr></thead>
-    <tbody id="active-tokens-body"></tbody>
-  </table></div>
-  <div class="section-title">Token Vault</div>
-  <div class="card">
-    <form id="vault-add-form" onsubmit="vaultAdd(event)" style="margin-bottom:16px">
-      <label>Token<input id="vault-token" type="password" placeholder="Discord bot token" required></label>
-      <label>Comment<input id="vault-comment" placeholder="Optional note"></label>
-      <button type="submit" class="btn-success">Add to Vault</button>
-    </form>
-    <table id="vault-table">
-      <thead><tr><th>Token</th><th>Comment</th><th>Added</th><th>Actions</th></tr></thead>
+  <div class="wp-card">
+    <div class="wp-card-title"><span class="wp-ic">🔑</span> Active Tokens</div>
+    <table class="wp-table">
+      <thead><tr><th>Slot</th><th>Type</th><th>Label</th><th>Token</th><th>Actions</th></tr></thead>
+      <tbody id="active-tokens-body"></tbody>
+    </table>
+  </div>
+  <div class="wp-card">
+    <div class="wp-card-title"><span class="wp-ic">🗄</span> Token Vault</div>
+    <p style="font-size:12px;color:#aee5ff;margin-bottom:14px">Store tokens here to assign them to slots later without re-typing.</p>
+    <div class="wp-form-row" style="margin-bottom:14px">
+      <div class="wp-form-group" style="flex:1;min-width:220px">
+        <span class="wp-form-label">Token</span>
+        <input class="wp-inp" id="vault-token" type="password" placeholder="Discord bot token">
+      </div>
+      <div class="wp-form-group" style="flex:1;min-width:160px">
+        <span class="wp-form-label">Note (optional)</span>
+        <input class="wp-inp" id="vault-comment" placeholder="e.g. main alliance bot">
+      </div>
+      <button class="wp-btn wp-btn-success" onclick="vaultAdd()" style="align-self:flex-end">Add to Vault</button>
+    </div>
+    <table class="wp-table">
+      <thead><tr><th>Token</th><th>Note</th><th>Added</th><th>Actions</th></tr></thead>
       <tbody id="vault-body"></tbody>
     </table>
   </div>
 </div>
 
-<div id="system" class="page">
-  <h2>System</h2>
-  <div class="sys-grid" id="sys-info"></div>
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-    <div class="section-title" style="margin:0">Service Status</div>
-    <button class="btn-warning btn-sm" onclick="restartAll()">Restart All Bots</button>
+<!-- SYSTEM -->
+<div id="system" class="wp-page">
+  <div class="wp-sys-grid" id="sys-info"></div>
+  <div class="wp-card">
+    <div class="wp-card-title" style="justify-content:space-between">
+      <span><span class="wp-ic">📡</span> Service Status</span>
+      <button class="wp-btn wp-btn-warn" style="font-size:10px;padding:5px 12px" onclick="restartAll()">↺ Restart All</button>
+    </div>
+    <table class="wp-table">
+      <thead><tr><th>Slot</th><th>Status</th></tr></thead>
+      <tbody id="sys-services"></tbody>
+    </table>
   </div>
-  <div class="card"><table>
-    <thead><tr><th>Slot</th><th>Status</th></tr></thead>
-    <tbody id="sys-services"></tbody>
-  </table></div>
-  <div class="section-title">Setup Log (last 50 lines)</div>
-  <div class="log-box" id="sys-log"></div>
-  <div style="display:flex;align-items:center;gap:12px;margin:18px 0 10px">
-    <div class="section-title" style="margin:0">OS Update</div>
-    <button class="btn-primary btn-sm" id="update-btn" onclick="runUpdate()">Check &amp; Apply Updates</button>
+  <div class="wp-card">
+    <div class="wp-card-title"><span class="wp-ic">📋</span> Setup Log</div>
+    <div class="wp-log-box" id="sys-log" style="height:200px"></div>
   </div>
-  <div id="update-msg"></div>
-  <div class="log-box" id="update-log" style="display:none;margin-top:8px"></div>
+  <div class="wp-card">
+    <div class="wp-card-title" style="justify-content:space-between">
+      <span><span class="wp-ic">⬆</span> OS Update</span>
+      <button class="wp-btn wp-btn-primary" id="update-btn" onclick="runUpdate()" style="font-size:10px;padding:5px 12px">Check &amp; Apply Updates</button>
+    </div>
+    <div id="update-msg"></div>
+    <div class="wp-log-box" id="update-log" style="height:200px;display:none;margin-top:10px"></div>
+  </div>
 </div>
 
+</div><!-- /wp-main -->
+
 <script>
-let _slots=[], _allSlots=[];
+let _slots=[], _allSlots=[], _selBotType='wos-py';
 
 function showTab(id,btn){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.wp-page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.wp-nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   btn.classList.add('active');
   if(id==='bots') loadBots();
@@ -818,9 +899,23 @@ function showTab(id,btn){
 }
 
 function esc(s){const d=document.createElement('span');d.textContent=s;return d.innerHTML}
-function badge(cls,text){return `<span class="badge badge-${cls}">${text}</span>`}
-function typeBadge(t){return badge(t,t)}
-function statusBadge(s){return badge(s,s)}
+
+function pillClass(s){
+  if(s==='active') return 'wp-pill-active';
+  if(s==='failed') return 'wp-pill-failed';
+  if(s==='activating') return 'wp-pill-activating';
+  return 'wp-pill-inactive';
+}
+
+function typeTag(t){
+  const map={
+    'wos-py':'<span class="wp-type-tag wp-tag-py">PYTHON</span>',
+    'wos-js':'<span class="wp-type-tag wp-tag-js">NODE 22</span>',
+    'kingshot':'<span class="wp-type-tag wp-tag-ks">KINGSHOT</span>',
+    'voicechat':'<span class="wp-type-tag wp-tag-vc">VOICECHAT</span>',
+  };
+  return map[t]||`<span class="wp-type-tag">${esc(t)}</span>`;
+}
 
 async function api(method,path,body){
   const opts={method,headers:{'Content-Type':'application/json'}};
@@ -829,49 +924,63 @@ async function api(method,path,body){
   return r.json();
 }
 
+// ---- BOTS ----
 async function loadBots(){
   _slots=await api('GET','/slots');
   _allSlots=[..._slots];
   const el=document.getElementById('bots-list');
-  if(!_slots.length){el.innerHTML='<div class="card" style="color:#64748b">No slots yet.</div>';return;}
-  el.innerHTML=_slots.map(s=>slotCard(s)).join('');
+  if(!_slots.length){
+    el.innerHTML='<div class="wp-card" style="color:#6c7a96;text-align:center;padding:32px">No bot slots found.</div>';
+    return;
+  }
+  el.innerHTML=_slots.map(slotCard).join('');
   _slots.filter(s=>s.type==='voicechat').forEach(s=>loadVcConfig(s.slot_id));
+  suggestSlotId();
 }
 
 function slotCard(s){
-  const installBtn=!s.installed?`<button class="btn-primary btn-sm" onclick="installSlot('${s.slot_id}','${s.type}')">Install</button>`:'';
-  return `<div class="card" id="slot-${s.slot_id}">
-  <div class="slot-header">
-    <span class="slot-id">${s.slot_id}</span>
-    ${typeBadge(s.type)}
-    ${statusBadge(s.service_status)}
-    <span class="slot-label">${esc(s.label)}</span>
-    <span style="margin-left:auto;font-size:.78rem;color:${s.has_token?'#4ade80':'#ef4444'}">${s.token_mask}</span>
+  const notInstalled=!s.installed;
+  return `<div class="wp-card" id="slot-${s.slot_id}">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <span style="font-family:'Share Tech Mono',monospace;font-size:15px;color:#00c8ff">${esc(s.slot_id)}</span>
+    ${typeTag(s.type)}
+    <span class="wp-pill ${pillClass(s.service_status)}">${esc(s.service_status)}</span>
+    <span style="color:#aee5ff;font-size:12px">${esc(s.label)}</span>
+    <span class="wp-token-mask${s.has_token?' has-token':''}" style="margin-left:auto">${esc(s.token_mask)}</span>
   </div>
-  <div class="slot-actions">
-    <button class="btn-success btn-sm" onclick="slotAct('${s.slot_id}','start')">Start</button>
-    <button class="btn-secondary btn-sm" onclick="slotAct('${s.slot_id}','stop')">Stop</button>
-    <button class="btn-warning btn-sm" onclick="slotAct('${s.slot_id}','restart')">Restart</button>
-    ${installBtn}
-    <button class="btn-danger btn-sm" onclick="removeSlot('${s.slot_id}')">Remove</button>
-    <button class="btn-secondary btn-sm" onclick="toggleLog('${s.slot_id}',this)">Logs</button>
-  </div>
-  ${s.type==='voicechat'?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #2d3148">
-    <div style="font-size:.82rem;color:#94a3b8;margin-bottom:6px">VoiceChat Config</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-      <label>Client ID<input id="vc-cid-${s.slot_id}" placeholder="Discord Application ID"></label>
-      <label>Guild ID<input id="vc-gid-${s.slot_id}" placeholder="Discord Server ID"></label>
-      <button class="btn-primary btn-sm" onclick="saveVcConfig('${s.slot_id}')">Save</button>
-    </div>
-    <div id="vc-msg-${s.slot_id}" style="font-size:.8rem;margin-top:6px"></div>
+  ${notInstalled?`<div class="wp-not-installed">
+    <span>&#9888; Not installed — click <strong>Install</strong> to download and set up this bot.</span>
+    <button class="wp-btn wp-btn-primary" onclick="installSlot('${s.slot_id}','${s.type}')">&#8681; Install</button>
   </div>`:''}
-  <div id="install-log-${s.slot_id}" class="install-log"></div>
-  <div id="bot-log-${s.slot_id}" class="bot-log">
-    <div class="log-header">
-      <span>journald log — <span id="bot-log-count-${s.slot_id}">last 100 lines</span></span>
-      <button class="btn-secondary btn-sm" onclick="refreshLog('${s.slot_id}')">Refresh</button>
+  <div class="wp-btn-row">
+    <button class="wp-btn wp-btn-success" onclick="slotAct('${s.slot_id}','start')">&#9654; Start</button>
+    <button class="wp-btn wp-btn-danger" onclick="slotAct('${s.slot_id}','stop')">&#9632; Stop</button>
+    <button class="wp-btn wp-btn-warn" onclick="slotAct('${s.slot_id}','restart')">&#8635; Restart</button>
+    <button class="wp-btn wp-btn-ghost" onclick="toggleLog('${s.slot_id}',this)">&#128203; Logs</button>
+    <button class="wp-btn wp-btn-ghost" style="color:#ff5a7a;border-color:#ff1744" onclick="removeSlot('${s.slot_id}')">&#10005; Remove</button>
+  </div>
+  ${s.type==='voicechat'?`<div class="wp-vc-section">
+    <div class="wp-vc-label">VoiceChat Configuration</div>
+    <div class="wp-form-row">
+      <div class="wp-form-group" style="flex:1;min-width:160px">
+        <span class="wp-form-label">Client ID</span>
+        <input class="wp-inp" id="vc-cid-${s.slot_id}" placeholder="Discord Application ID">
+      </div>
+      <div class="wp-form-group" style="flex:1;min-width:160px">
+        <span class="wp-form-label">Guild ID</span>
+        <input class="wp-inp" id="vc-gid-${s.slot_id}" placeholder="Discord Server ID">
+      </div>
+      <button class="wp-btn wp-btn-primary" onclick="saveVcConfig('${s.slot_id}')" style="align-self:flex-end">Save Config</button>
     </div>
-    <div class="log-box" id="bot-log-box-${s.slot_id}"></div>
+    <div id="vc-msg-${s.slot_id}" style="font-size:11px;margin-top:8px"></div>
+  </div>`:''}
+  <div id="install-log-${s.slot_id}" class="wp-install-log"></div>
+  <div id="bot-log-${s.slot_id}" class="wp-bot-log">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;margin-top:10px">
+      <span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#6c7a96">Journal Log &middot; <span id="bot-log-count-${s.slot_id}">&#8212;</span></span>
+      <button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="refreshLog('${s.slot_id}')">&#8635; Refresh</button>
+    </div>
+    <div class="wp-log-box" id="bot-log-box-${s.slot_id}" style="height:200px"></div>
   </div>
 </div>`;
 }
@@ -889,8 +998,8 @@ async function saveVcConfig(sid){
   const guild_id=(document.getElementById(`vc-gid-${sid}`)?.value||'').trim();
   const r=await api('POST',`/slots/${sid}/voicechat-config`,{client_id,guild_id});
   const msg=document.getElementById(`vc-msg-${sid}`);
-  if(r.error){msg.innerHTML=`<span style="color:#f87171">${esc(r.error)}</span>`;}
-  else{msg.innerHTML='<span style="color:#4ade80">Saved — restart bot to apply</span>';setTimeout(()=>{if(msg)msg.innerHTML='';},3000);}
+  if(r.error){msg.innerHTML=`<span style="color:#ff5a7a">${esc(r.error)}</span>`;}
+  else{msg.innerHTML='<span style="color:#00e676">&#10003; Saved &#8212; restart bot to apply</span>';setTimeout(()=>{if(msg)msg.innerHTML='';},3000);}
 }
 
 async function slotAct(sid,action){
@@ -900,7 +1009,7 @@ async function slotAct(sid,action){
 
 async function installSlot(sid,type){
   const logEl=document.getElementById(`install-log-${sid}`);
-  logEl.innerHTML=`<div style="color:#94a3b8;font-size:.82rem;margin-top:8px"><span class="spinner"></span> Installing ${type}…</div><div class="log-box" id="ilog-${sid}"></div>`;
+  logEl.innerHTML=`<div style="color:#aee5ff;font-size:12px;margin-top:10px;margin-bottom:6px"><span class="wp-spin"></span> Installing ${esc(type)} &#8212; this may take a few minutes&hellip;</div><div class="wp-log-box" id="ilog-${sid}" style="height:200px"></div>`;
   await api('POST',`/slots/${sid}/install`);
   pollInstallLog(sid);
 }
@@ -909,190 +1018,185 @@ function pollInstallLog(sid){
   const poll=setInterval(async()=>{
     const d=await api('GET',`/install-log/${sid}`);
     const box=document.getElementById(`ilog-${sid}`);
-    if(box) box.textContent=d.lines.join('\n');
+    if(box){box.textContent=d.lines.join('\n');box.scrollTop=box.scrollHeight;}
     const st=await api('GET',`/slots/${sid}/status`);
-    if(!st.installing){
-      clearInterval(poll);
-      loadBots();
-    }
+    if(!st.installing){clearInterval(poll);loadBots();}
   },2000);
 }
 
 async function removeSlot(sid){
-  if(!confirm(`Remove slot ${sid}? This deletes all bot files.`)) return;
+  if(!confirm(`Remove slot "${sid}"?\n\nThis permanently deletes all bot files. The bot will be stopped.`)) return;
   const r=await api('DELETE',`/slots/${sid}`);
   if(r.error) alert(r.error); else loadBots();
 }
 
-async function createSlot(e){
-  e.preventDefault();
-  const sid=document.getElementById('new-sid').value.trim();
-  const type=document.getElementById('new-type').value;
-  const label=document.getElementById('new-label').value.trim();
-  const r=await api('POST','/slots',{slot_id:sid,type,label});
-  const warn=document.getElementById('add-slot-warn');
-  if(r.error){warn.innerHTML=`<div class="err-banner">${r.error}</div>`;return;}
-  warn.innerHTML='';
-  if(r.warnings&&r.warnings.length){
-    warn.innerHTML=r.warnings.map(w=>`<div class="warn-banner">⚠ ${w}</div>`).join('');
-  }
-  document.getElementById('add-slot-form').reset();
-  loadBots();
+function pickBotType(type,el){
+  _selBotType=type;
+  document.getElementById('new-type').value=type;
+  document.querySelectorAll('#bot-type-picker .wp-bot-opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  suggestSlotId();
 }
 
 function suggestSlotId(){
-  const type=document.getElementById('new-type').value;
+  const type=_selBotType;
   const prefix=type==='voicechat'?'vc':type.replace('-py','').replace('-js','');
-  const existing=_allSlots.filter(s=>s.type===type||s.slot_id.startsWith(prefix+'-')).length;
+  const existing=_allSlots.filter(s=>s.slot_id.startsWith(prefix+'-')).length;
   document.getElementById('new-sid').value=`${prefix}-${existing+1}`;
 }
 
+async function createSlot(){
+  const sid=(document.getElementById('new-sid').value||'').trim();
+  const type=document.getElementById('new-type').value;
+  const label=(document.getElementById('new-label').value||'').trim();
+  const warn=document.getElementById('add-slot-warn');
+  if(!sid||!type||!label){warn.innerHTML='<div class="wp-banner-err">Slot ID and Display Name are required.</div>';return;}
+  const r=await api('POST','/slots',{slot_id:sid,type,label});
+  if(r.error){warn.innerHTML=`<div class="wp-banner-err">${esc(r.error)}</div>`;return;}
+  warn.innerHTML='';
+  if(r.warnings&&r.warnings.length){
+    warn.innerHTML=r.warnings.map(w=>`<div class="wp-banner-warn">&#9888; ${esc(w)}</div>`).join('');
+  }
+  document.getElementById('new-label').value='';
+  loadBots();
+}
+
+// ---- TOKENS ----
 async function loadTokens(){
   const d=await api('GET','/tokens');
-  const msg=document.getElementById('tokens-msg');
-  // Active tokens
-  const tbody=document.getElementById('active-tokens-body');
-  tbody.innerHTML=d.active.map(t=>`<tr>
-    <td>${t.slot_id}</td>
-    <td>${typeBadge(t.type)}</td>
-    <td>${t.label}</td>
-    <td style="font-family:monospace;color:${t.has_token?'#4ade80':'#6b7280'}">${t.token_mask}</td>
-    <td>
-      <button class="btn-primary btn-sm" onclick="setTokenPrompt('${t.slot_id}')">Set</button>
-      ${t.has_token?`<button class="btn-secondary btn-sm" onclick="migratePrompt('${t.slot_id}')">Move to…</button>
-      <button class="btn-danger btn-sm" onclick="clearToken('${t.slot_id}')">Clear</button>`:''}
-    </td>
+  document.getElementById('active-tokens-body').innerHTML=d.active.map(t=>`<tr>
+    <td style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(t.slot_id)}</td>
+    <td>${typeTag(t.type)}</td>
+    <td style="color:#aee5ff">${esc(t.label)}</td>
+    <td style="font-family:'Share Tech Mono',monospace;color:${t.has_token?'#00e676':'#6c7a96'}">${esc(t.token_mask)}</td>
+    <td><div class="wp-btn-row" style="gap:6px">
+      <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="setTokenPrompt('${t.slot_id}')">Set Token</button>
+      ${t.has_token?`<button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="migratePrompt('${t.slot_id}')">Move to&hellip;</button>
+      <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="clearToken('${t.slot_id}')">Clear</button>`:''}
+    </div></td>
   </tr>`).join('');
-
-  // Vault
   const vbody=document.getElementById('vault-body');
-  if(!d.vault.length){vbody.innerHTML='<tr><td colspan="4" style="color:#6b7280">No tokens in vault.</td></tr>';return;}
-  const slotOpts=d.active.map(s=>`<option value="${s.slot_id}">${s.slot_id} (${s.type})</option>`).join('');
+  if(!d.vault.length){
+    vbody.innerHTML='<tr><td colspan="4" style="color:#6c7a96;padding:16px 12px">No tokens in vault. Add one above.</td></tr>';
+    return;
+  }
+  const slotOpts=d.active.map(s=>`<option value="${esc(s.slot_id)}">${esc(s.slot_id)} (${esc(s.type)})</option>`).join('');
   vbody.innerHTML=d.vault.map(v=>`<tr>
-    <td style="font-family:monospace">${v.token_mask}</td>
-    <td>${v.comment||'—'}</td>
-    <td style="font-size:.78rem;color:#64748b">${v.added.slice(0,10)}</td>
-    <td>
-      <select id="asgn-${v.token_hash}" style="min-width:120px"><option value="">Select slot…</option>${slotOpts}</select>
-      <button class="btn-primary btn-sm" onclick="assignVault('${v.token_hash}')">Assign</button>
-      <button class="btn-danger btn-sm" onclick="removeVault('${v.token_hash}')">Remove</button>
-    </td>
+    <td style="font-family:'Share Tech Mono',monospace;color:#cdd6f4">${esc(v.token_mask)}</td>
+    <td style="color:#aee5ff">${esc(v.comment||'&#8212;')}</td>
+    <td style="color:#6c7a96;font-size:11px">${esc(v.added.slice(0,10))}</td>
+    <td><div class="wp-btn-row" style="gap:6px">
+      <select class="wp-inp" id="asgn-${v.token_hash}" style="min-width:130px;padding:4px 8px"><option value="">Select slot&hellip;</option>${slotOpts}</select>
+      <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="assignVault('${v.token_hash}')">Assign</button>
+      <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="removeVault('${v.token_hash}')">Remove</button>
+    </div></td>
   </tr>`).join('');
 }
 
 async function setTokenPrompt(sid){
-  const tok=prompt(`Enter new token for slot ${sid}:`);
+  const tok=prompt(`Enter new Discord bot token for slot "${sid}":`);
   if(!tok) return;
-  const r=await api('POST','/tokens/set',{slot_id:sid,token:tok});
-  showMsg(r);
-  loadTokens();
+  const r=await api('POST','/tokens/set',{slot_id:sid,token:tok.trim()});
+  showMsg(r);loadTokens();
 }
 
 async function clearToken(sid){
-  if(!confirm(`Clear token for ${sid}? The bot will stop.`)) return;
+  if(!confirm(`Clear token for "${sid}"? The bot will stop.`)) return;
   const r=await api('POST','/tokens/clear',{slot_id:sid});
-  showMsg(r);
-  loadTokens();
+  showMsg(r);loadTokens();
 }
 
 async function migratePrompt(src){
   const slots=_allSlots.filter(s=>s.slot_id!==src);
   if(!slots.length){alert('No other slots to migrate to.');return;}
-  const dst=prompt(`Migrate token from ${src} to which slot?\n${slots.map(s=>s.slot_id).join(', ')}`);
+  const dst=prompt(`Move token from "${src}" to which slot?\n\nAvailable: ${slots.map(s=>s.slot_id).join(', ')}`);
   if(!dst) return;
-  const r=await api('POST','/tokens/migrate',{from_slot:src,to_slot:dst});
-  showMsg(r);
-  loadTokens();
+  const r=await api('POST','/tokens/migrate',{from_slot:src,to_slot:dst.trim()});
+  showMsg(r);loadTokens();
 }
 
-async function vaultAdd(e){
-  e.preventDefault();
-  const token=document.getElementById('vault-token').value.trim();
-  const comment=document.getElementById('vault-comment').value.trim();
+async function vaultAdd(){
+  const token=(document.getElementById('vault-token').value||'').trim();
+  const comment=(document.getElementById('vault-comment').value||'').trim();
+  if(!token){showMsg({error:'Token is required'});return;}
   const r=await api('POST','/vault/add',{token,comment});
   showMsg(r);
-  document.getElementById('vault-add-form').reset();
+  document.getElementById('vault-token').value='';
+  document.getElementById('vault-comment').value='';
   loadTokens();
 }
 
 async function removeVault(h){
   if(!confirm('Remove this token from vault?')) return;
   const r=await api('DELETE',`/vault/${h}`);
-  showMsg(r);
-  loadTokens();
+  showMsg(r);loadTokens();
 }
 
 async function assignVault(h){
   const sel=document.getElementById(`asgn-${h}`);
-  const sid=sel.value;
+  const sid=sel?sel.value:'';
   if(!sid){alert('Select a slot first.');return;}
   const r=await api('POST','/vault/assign',{token_hash:h,slot_id:sid});
-  showMsg(r);
-  loadTokens();
+  showMsg(r);loadTokens();
 }
 
 function showMsg(r){
   const el=document.getElementById('tokens-msg');
-  if(r.error) el.innerHTML=`<div class="err-banner">${r.error}</div>`;
-  else el.innerHTML=`<div class="ok-banner">Done.</div>`;
+  if(r.error) el.innerHTML=`<div class="wp-banner-err">&#10005; ${esc(r.error)}</div>`;
+  else el.innerHTML=`<div class="wp-banner-ok">&#10003; Done.</div>`;
   setTimeout(()=>el.innerHTML='',3000);
 }
 
+// ---- SYSTEM ----
 async function loadSystem(){
   const d=await api('GET','/system');
   document.getElementById('sys-info').innerHTML=`
-    <div class="sys-card"><div class="label">Hostname</div><div class="value">${d.hostname}</div></div>
-    <div class="sys-card"><div class="label">IP Address</div><div class="value">${d.ip}</div></div>
-    <div class="sys-card"><div class="label">Uptime</div><div class="value">${d.uptime}</div></div>`;
+    <div class="wp-sys-tile"><div class="lbl">Hostname</div><div class="val">${esc(d.hostname)}</div></div>
+    <div class="wp-sys-tile"><div class="lbl">IP Address</div><div class="val">${esc(d.ip)}</div></div>
+    <div class="wp-sys-tile"><div class="lbl">Uptime</div><div class="val">${esc(d.uptime)}</div></div>`;
   document.getElementById('sys-services').innerHTML=d.services.map(s=>
-    `<tr><td>${s.slot_id}</td><td>${statusBadge(s.status)}</td></tr>`
-  ).join('')||'<tr><td colspan="2" style="color:#6b7280">No bot slots found.</td></tr>';
+    `<tr><td style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(s.slot_id)}</td><td><span class="wp-pill ${pillClass(s.status)}">${esc(s.status)}</span></td></tr>`
+  ).join('')||'<tr><td colspan="2" style="color:#6c7a96;padding:16px 12px">No bot slots found.</td></tr>';
   document.getElementById('sys-log').textContent=d.log_tail.join('\n');
 }
 
 async function restartAll(){
+  if(!confirm('Restart all running bots?')) return;
   const r=await api('POST','/system/restart-all');
   alert(`Restarted: ${(r.restarted||[]).join(', ')||'none'}`);
   loadSystem();
 }
 
-let _updatePoll = null;
-
+let _updatePoll=null;
 async function runUpdate(){
   const btn=document.getElementById('update-btn');
   const msg=document.getElementById('update-msg');
   const log=document.getElementById('update-log');
-  btn.disabled=true;
-  btn.textContent='Updating…';
-  msg.innerHTML='<div class="ok-banner"><span class="spinner"></span> Update started — downloading latest scripts and web panel…</div>';
-  log.style.display='block';
-  log.textContent='';
+  btn.disabled=true;btn.textContent='Updating\u2026';
+  msg.innerHTML='<div class="wp-banner-ok"><span class="wp-spin"></span> Update started &#8212; downloading latest scripts&hellip;</div>';
+  log.style.display='block';log.textContent='';
   const r=await api('POST','/system/update');
   if(r.error){
-    msg.innerHTML=`<div class="err-banner">${r.error}</div>`;
-    btn.disabled=false;btn.textContent='Check & Apply Updates';
-    return;
+    msg.innerHTML=`<div class="wp-banner-err">&#10005; ${esc(r.error)}</div>`;
+    btn.disabled=false;btn.textContent='Check & Apply Updates';return;
   }
   if(_updatePoll) clearInterval(_updatePoll);
   _updatePoll=setInterval(async()=>{
     const d=await api('GET','/system/update-log');
-    log.textContent=(d.lines||[]).join('\n');
-    log.scrollTop=log.scrollHeight;
+    log.textContent=(d.lines||[]).join('\n');log.scrollTop=log.scrollHeight;
     if(!d.running){
       clearInterval(_updatePoll);_updatePoll=null;
       const ok=(d.lines||[]).some(l=>l.includes('Update complete'));
       const failed=(d.lines||[]).some(l=>l.includes('failed'));
-      if(failed&&!ok){
-        msg.innerHTML='<div class="err-banner">Update finished with errors — check the log above.</div>';
-      } else {
-        msg.innerHTML='<div class="ok-banner">Update complete. The web panel will restart shortly — reload this page in a few seconds.</div>';
-      }
+      msg.innerHTML=failed&&!ok
+        ?'<div class="wp-banner-err">Update finished with errors &#8212; check the log above.</div>'
+        :'<div class="wp-banner-ok">&#10003; Update complete. The web panel will restart shortly &#8212; reload this page in a few seconds.</div>';
       btn.disabled=false;btn.textContent='Check & Apply Updates';
     }
   },2000);
 }
 
-// Bot log viewer
+// ---- BOT LOGS ----
 const _logPolls={};
 
 async function refreshLog(sid){
@@ -1102,25 +1206,24 @@ async function refreshLog(sid){
   const lines=d.lines||[];
   box.textContent=lines.length?lines.join('\n'):'(no log entries yet)';
   box.scrollTop=box.scrollHeight;
-  document.getElementById(`bot-log-count-${sid}`).textContent=`${lines.length} lines`;
+  const cnt=document.getElementById(`bot-log-count-${sid}`);
+  if(cnt) cnt.textContent=`${lines.length} lines`;
 }
 
 function toggleLog(sid,btn){
   const panel=document.getElementById(`bot-log-${sid}`);
   const open=panel.classList.toggle('open');
-  btn.textContent=open?'Hide Logs':'Logs';
+  btn.textContent=open?'\u{1F4CB} Hide Logs':'\u{1F4CB} Logs';
   if(open){
     refreshLog(sid);
     if(!_logPolls[sid]) _logPolls[sid]=setInterval(()=>refreshLog(sid),4000);
   } else {
-    clearInterval(_logPolls[sid]);
-    delete _logPolls[sid];
+    clearInterval(_logPolls[sid]);delete _logPolls[sid];
   }
 }
 
 // Init
 loadBots();
-suggestSlotId();
 </script>
 </body>
 </html>"""
