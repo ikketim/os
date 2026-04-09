@@ -323,7 +323,10 @@ def api_slot_install(slot_id):
 def api_slot_logs(slot_id):
     if not re.match(r'^[a-zA-Z0-9_-]+$', slot_id):
         return jsonify({"error": "Invalid slot ID"}), 400
-    n = min(int(request.args.get("n", 100)), 500)
+    try:
+        n = min(int(request.args.get("n", 100)), 500)
+    except (ValueError, TypeError):
+        n = 100
     try:
         r = subprocess.run(
             ["journalctl", "-u", f"wp-os-bot@{slot_id}",
@@ -374,7 +377,8 @@ def api_voicechat_config_set(slot_id):
     cfg_path = slot_dir / ".config.json"
     _write_json(cfg_path, cfg)
     os.chmod(cfg_path, 0o600)
-    os.chown(cfg_path, 0, 0)
+    uid, gid = _os_user_ids()
+    os.chown(cfg_path, uid, gid)  # bot service runs as OS_USERNAME and reads this
     return jsonify({"ok": True})
 
 @app.route("/api/install-log/<slot_id>", methods=["GET"])
@@ -383,7 +387,10 @@ def api_install_log(slot_id):
     try:
         with open(log_file) as f:
             lines = f.readlines()
-        n = int(request.args.get("n", 100))
+        try:
+            n = int(request.args.get("n", 100))
+        except (ValueError, TypeError):
+            n = 100
         return jsonify({"lines": [l.rstrip() for l in lines[-n:]]})
     except FileNotFoundError:
         return jsonify({"lines": []})
@@ -649,7 +656,10 @@ def api_system_update_log():
     try:
         with open(UPDATE_LOG) as f:
             lines = f.readlines()
-        n = int(request.args.get("n", 100))
+        try:
+            n = int(request.args.get("n", 100))
+        except (ValueError, TypeError):
+            n = 100
         return jsonify({"lines": [l.rstrip() for l in lines[-n:]], "running": running})
     except FileNotFoundError:
         return jsonify({"lines": [], "running": running})

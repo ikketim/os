@@ -40,7 +40,7 @@ info "Bootstrapping Ubuntu ${UBUNTU_SERIES} rootfs..."
 debootstrap \
   --arch=amd64 \
   --include=systemd,dbus,iproute2,openssh-server,curl,sudo,ca-certificates \
-  "${UBUNTU_SERIES%.*}.${UBUNTU_SERIES##*.}" \
+  noble \
   "$ROOTFS" \
   http://archive.ubuntu.com/ubuntu
 
