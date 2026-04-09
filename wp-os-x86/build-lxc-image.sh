@@ -26,7 +26,6 @@ error() { echo -e "${RED}[ERR]${NC}  $*"; exit 1; }
 
 [ "$EUID" -eq 0 ] || error "Must be run as root"
 command -v debootstrap &>/dev/null || error "debootstrap not found"
-command -v systemd-nspawn &>/dev/null || error "systemd-nspawn not found"
 
 cleanup() { rm -rf "${SCRIPT_DIR}/build-tmp-lxc"; }
 trap cleanup EXIT
