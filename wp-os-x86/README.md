@@ -122,7 +122,8 @@ wp-os-x86/
 ├── config-wsl.sh                          WSL2 variant of config.sh
 ├── build-iso.sh                           ISO builder (native Linux)
 ├── build-iso-wsl.sh                       ISO builder (WSL2)
-├── build-lxc.sh                           Proxmox LXC builder
+├── build-lxc.sh                           Proxmox LXC builder (runs on Proxmox host)
+├── build-lxc-image.sh                     Portable LXC/Incus image builder (CI / debootstrap)
 ├── iso-builder/
 │   ├── user-data                          Ubuntu autoinstall cloud-config
 │   └── meta-data                          Instance metadata

@@ -42,7 +42,7 @@ trap cleanup EXIT
 check_deps() {
   info "Checking dependencies..."
   [ "$EUID" -eq 0 ] || error "Run as root: sudo ./build.sh"
-  for cmd in wget losetup mount; do
+  for cmd in wget xz losetup mount; do
     command -v "$cmd" &>/dev/null || error "Missing: $cmd"
   done
 }

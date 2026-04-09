@@ -32,7 +32,6 @@ autoinstall:
     - net-tools
     - jq
     - ca-certificates
-    - p7zip-full
   late-commands:
     - cp /cdrom/wp-os/wp-os-provision.sh /target/usr/local/bin/wp-os-provision.sh
     - chmod +x /target/usr/local/bin/wp-os-provision.sh

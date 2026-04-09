@@ -157,6 +157,7 @@ inject_and_run() {
     /usr/local/bin/wp-os-install-bot.sh \
     /usr/local/bin/wp-os-bot-start.sh \
     /usr/local/bin/wp-os-bot-manager.sh \
+    /usr/local/bin/wp-os-update.sh \
     "${WEBSERVER_DIR}/app.py"
 
   info "Running provisioning (this takes 5-15 minutes)..."
