@@ -50,7 +50,8 @@ install_wos_js() {
     || error "Failed to clone ${BOT_JS_REPO}"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "${APP_DIR}/src"
   cd "${APP_DIR}/src"
-  sudo -u "$OS_USERNAME" npm install || error "npm install failed"
+  sudo -u "$OS_USERNAME" npm install 2>&1 || error "npm install failed for wos-js"
+  [ -d "${APP_DIR}/src/node_modules" ] || error "npm install completed but node_modules is missing for wos-js"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
 }
 
@@ -79,7 +80,9 @@ install_voicechat() {
   git clone --depth 1 --branch "$BOT_VOICECHAT_BRANCH" "$BOT_VOICECHAT_REPO" . \
     || error "Failed to clone ${BOT_VOICECHAT_REPO}"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
-  sudo -u "$OS_USERNAME" npm install || error "npm install failed"
+  sudo -u "$OS_USERNAME" npm install 2>&1 || error "npm install failed for voicechat"
+  [ -d "${APP_DIR}/node_modules" ] || error "npm install completed but node_modules is missing for voicechat"
+  [ -d "${APP_DIR}/node_modules/discord.js" ] || error "discord.js missing after npm install -- check package.json"
   chown -R "${OS_USERNAME}:${OS_USERNAME}" "$APP_DIR"
 }
 
