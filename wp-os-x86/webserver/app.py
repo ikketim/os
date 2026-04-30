@@ -161,6 +161,8 @@ def list_slots():
     return slots
 
 def get_wos_count(exclude_slot=None):
+    if not BOTS_DIR.exists():
+        return 0
     count = 0
     for d in BOTS_DIR.iterdir():
         if not d.is_dir(): continue
@@ -173,6 +175,8 @@ def get_wos_count(exclude_slot=None):
     return count
 
 def get_type_count(bot_type, exclude_slot=None):
+    if not BOTS_DIR.exists():
+        return 0
     count = 0
     for d in BOTS_DIR.iterdir():
         if not d.is_dir(): continue
@@ -1315,32 +1319,6 @@ document.addEventListener('keydown', (e) => {
     closeDeleteModal();
   }
 });
-
-  const r = await api('POST','/tokens/clear',{
-    slot_id: _clearSlot,
-    mode: mode
-  });
-
-  closeClearModal();
-  showMsg(r);
-  loadTokens();
-}
-
-// Ensure DOM exists before attaching listeners
-window.addEventListener('DOMContentLoaded', () => {
-  const modal = document.getElementById('clear-modal');
-
-  if(modal){
-    modal.addEventListener('click', (e) => {
-      if(e.target.id === 'clear-modal') closeClearModal();
-    });
-  }
-
-  document.addEventListener('keydown', (e) => {
-    if(e.key === 'Escape') closeClearModal();
-  });
-});
-
 
 async function vaultAdd(){
   const token=(document.getElementById('vault-token').value||'').trim();
