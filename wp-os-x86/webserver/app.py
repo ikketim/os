@@ -566,8 +566,9 @@ def api_token_migrate():
 def api_vault_add():
     data = request.json or {}
     token = data.get("token", "").strip()
-    comment = data.get("comment", "").strip()
+    comment = data.get("comment", "").strip()  # <- Explicitly grab the comment from the frontend
     
+    # Check for the token FIRST before trying to do anything with it
     if not token:
         return jsonify({"error": "token required"}), 400
 
@@ -575,24 +576,30 @@ def api_vault_add():
     if not comment:
         bot_name = get_discord_bot_name(token)
         if bot_name:
-            comment = f"{bot_name}"
+            comment = bot_name
 
     h = sha256t(token)
     reg = registry_get()
-    if h in reg["tokens"]:
+    
+    # Check if token is already in use by an active slot
+    if h in reg.get("tokens", {}):
         return jsonify({"error": f"Token already in use by slot: {reg['tokens'][h]}"}), 400
 
     v = vault_get()
-    for entry in v["tokens"]:
+    
+    # Check if token is already in the vault
+    for entry in v.get("tokens", []):
         if sha256t(entry.get("token", "")) == h:
             return jsonify({"error": "Token already in vault"}), 400
 
+    # Add to vault
     v["tokens"].append({
         "token": token,
         "comment": comment,
         "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
     vault_save(v)
+    
     return jsonify({"ok": True})
 
 @app.route("/api/vault/<token_hash>", methods=["DELETE"])
