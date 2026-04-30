@@ -265,28 +265,28 @@ def api_slots_remove(slot_id):
 
     tok = read_token(slot_id)
     if tok:
-    with _registry_lock:
-        h = sha256t(tok)
+        with _registry_lock:
+            h = sha256t(tok)
 
-        # Remove from registry
-        reg = registry_get()
-        reg["tokens"].pop(h, None)
-        registry_save(reg)
+            # Remove from registry
+            reg = registry_get()
+            reg["tokens"].pop(h, None)
+            registry_save(reg)
 
-        # Add back to vault (avoid duplicates)
-        v = vault_get()
-        exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
+            # Add back to vault (avoid duplicates)
+            v = vault_get()
+            exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
 
-        if not exists:
-            bot_name = get_discord_bot_name(tok)
-            comment = bot_name if bot_name else f"Recovered from deleted slot {slot_id}"
+            if not exists:
+                bot_name = get_discord_bot_name(tok)
+                comment = bot_name if bot_name else f"Recovered from deleted slot {slot_id}"
 
-            v["tokens"].append({
-                "token": tok,
-                "comment": comment,
-                "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            })
-            vault_save(v)
+                v["tokens"].append({
+                    "token": tok,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                vault_save(v)
 
     for action in ("stop", "disable"):
         r = subprocess.run(["systemctl", action, f"wp-os-bot@{slot_id}"],
@@ -566,14 +566,16 @@ def api_token_migrate():
 def api_vault_add():
     data = request.json or {}
     token = data.get("token", "").strip()
+    comment = data.get("comment", "").strip() # <- Add this line
     
-# Auto-fill if empty
-if not comment:
-    bot_name = get_discord_bot_name(token)
-    if bot_name:
-        comment = f"{bot_name}"
     if not token:
         return jsonify({"error": "token required"}), 400
+
+    # Auto-fill if empty
+    if not comment:
+        bot_name = get_discord_bot_name(token)
+        if bot_name:
+            comment = f"{bot_name}"
 
     h = sha256t(token)
     reg = registry_get()
