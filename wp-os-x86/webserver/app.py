@@ -574,6 +574,48 @@ def api_vault_assign():
     svc_run("restart", slot_id)
     return jsonify({"ok": True})
 
+@app.route("/api/vault/return", methods=["POST"])
+def api_vault_return():
+    data = request.json or {}
+    slot_id = data.get("slot_id", "").strip()
+
+    if not slot_id:
+        return jsonify({"error": "slot_id required"}), 400
+
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    token = read_token(slot_id)
+    if not token:
+        return jsonify({"error": "No token on this slot"}), 400
+
+    with _registry_lock:
+        reg = registry_get()
+        h = sha256t(token)
+
+        # Remove from registry
+        reg["tokens"].pop(h, None)
+        registry_save(reg)
+
+        # Add back to vault (avoid duplicates)
+        v = vault_get()
+        exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
+        if not exists:
+            v["tokens"].append({
+                "token": token,
+                "comment": f"Returned from {slot_id}",
+                "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            vault_save(v)
+
+        # Clear token from slot
+        write_token(slot_id, "")
+
+    svc_run("stop", slot_id)
+
+    return jsonify({"ok": True})
+
 # ---------------------------------------------------------------------------
 # System API
 # ---------------------------------------------------------------------------
