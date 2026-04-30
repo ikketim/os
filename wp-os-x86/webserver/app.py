@@ -12,6 +12,8 @@ import re
 import shutil
 import subprocess
 import threading
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -181,6 +183,18 @@ def get_type_count(bot_type, exclude_slot=None):
         if meta.get("type") == bot_type:
             count += 1
     return count
+
+def get_discord_bot_name(token: str) -> str:
+    try:
+        req = urllib.request.Request(
+            "https://discord.com/api/v10/users/@me",
+            headers={"Authorization": f"Bot {token}"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as res:
+            data = json.loads(res.read().decode())
+            return data.get("username", "")
+    except Exception:
+        return ""
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -502,7 +516,12 @@ def api_token_migrate():
 def api_vault_add():
     data = request.json or {}
     token = data.get("token", "").strip()
-    comment = data.get("comment", "").strip()
+    
+# Auto-fill if empty
+if not comment:
+    bot_name = get_discord_bot_name(token)
+    if bot_name:
+        comment = f"{bot_name}"
     if not token:
         return jsonify({"error": "token required"}), 400
 
@@ -572,6 +591,51 @@ def api_vault_assign():
         vault_save(v)
 
     svc_run("restart", slot_id)
+    return jsonify({"ok": True})
+
+@app.route("/api/vault/return", methods=["POST"])
+def api_vault_return():
+    data = request.json or {}
+    slot_id = data.get("slot_id", "").strip()
+
+    if not slot_id:
+        return jsonify({"error": "slot_id required"}), 400
+
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    token = read_token(slot_id)
+    if not token:
+        return jsonify({"error": "No token on this slot"}), 400
+
+    with _registry_lock:
+        reg = registry_get()
+        h = sha256t(token)
+
+        # Remove from registry
+        reg["tokens"].pop(h, None)
+        registry_save(reg)
+
+        # Add back to vault (avoid duplicates)
+        v = vault_get()
+        exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
+        if not exists:
+            bot_name = get_discord_bot_name(token)
+            comment = bot_name if bot_name else f"Returned from {slot_id}"
+            
+            v["tokens"].append({
+                "token": token,
+                "comment": comment,
+                "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            vault_save(v)
+
+        # Clear token from slot
+        write_token(slot_id, "")
+
+    svc_run("stop", slot_id)
+
     return jsonify({"ok": True})
 
 # ---------------------------------------------------------------------------
@@ -927,6 +991,14 @@ function typeTag(t){
   return map[t]||`<span class="wp-type-tag">${esc(t)}</span>`;
 }
 
+async function returnToVault(slot_id){
+  if(!confirm(`Return token from "${slot_id}" to vault?`)) return;
+
+  const r = await api('POST','/vault/return',{slot_id});
+  showMsg(r);
+  loadTokens();
+}
+
 async function api(method,path,body){
   const opts={method,headers:{'Content-Type':'application/json'}};
   if(body) opts.body=JSON.stringify(body);
@@ -1081,8 +1153,11 @@ async function loadTokens(){
     <td style="font-family:'Share Tech Mono',monospace;color:${t.has_token?'#00e676':'#6c7a96'}">${esc(t.token_mask)}</td>
     <td><div class="wp-btn-row" style="gap:6px">
       <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="setTokenPrompt('${t.slot_id}')">Set Token</button>
-      ${t.has_token?`<button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="migratePrompt('${t.slot_id}')">Move to&hellip;</button>
-      <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="clearToken('${t.slot_id}')">Clear</button>`:''}
+      ${t.has_token?`
+<button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="migratePrompt('${t.slot_id}')">Move to…</button>
+<button class="wp-btn wp-btn-warn" style="font-size:10px;padding:4px 10px" onclick="returnToVault('${t.slot_id}')">Return</button>
+<button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="clearToken('${t.slot_id}')">Clear</button>
+`:''}
     </div></td>
   </tr>`).join('');
   const vbody=document.getElementById('vault-body');
