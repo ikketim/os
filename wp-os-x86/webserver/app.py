@@ -265,10 +265,28 @@ def api_slots_remove(slot_id):
 
     tok = read_token(slot_id)
     if tok:
-        with _registry_lock:
-            reg = registry_get()
-            reg["tokens"].pop(sha256t(tok), None)
-            registry_save(reg)
+    with _registry_lock:
+        h = sha256t(tok)
+
+        # Remove from registry
+        reg = registry_get()
+        reg["tokens"].pop(h, None)
+        registry_save(reg)
+
+        # Add back to vault (avoid duplicates)
+        v = vault_get()
+        exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
+
+        if not exists:
+            bot_name = get_discord_bot_name(tok)
+            comment = bot_name if bot_name else f"Recovered from deleted slot {slot_id}"
+
+            v["tokens"].append({
+                "token": tok,
+                "comment": comment,
+                "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            vault_save(v)
 
     for action in ("stop", "disable"):
         r = subprocess.run(["systemctl", action, f"wp-os-bot@{slot_id}"],
@@ -468,16 +486,48 @@ def api_token_set():
 def api_token_clear():
     data = request.json or {}
     slot_id = data.get("slot_id", "").strip()
+    mode = data.get("mode", "delete")  # "vault" or "delete"
+
     if not slot_id:
         return jsonify({"error": "slot_id required"}), 400
+
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    token = read_token(slot_id)
+    if not token:
+        return jsonify({"ok": True})
+
     with _registry_lock:
-        old = read_token(slot_id)
-        if old:
-            reg = registry_get()
-            reg["tokens"].pop(sha256t(old), None)
-            registry_save(reg)
+        h = sha256t(token)
+
+        # Remove from registry
+        reg = registry_get()
+        reg["tokens"].pop(h, None)
+        registry_save(reg)
+
+        # Return to vault if selected
+        if mode == "vault":
+            v = vault_get()
+            exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
+
+            if not exists:
+                bot_name = get_discord_bot_name(token)
+                comment = bot_name if bot_name else f"Returned from {slot_id}"
+
+                v["tokens"].append({
+                    "token": token,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                vault_save(v)
+
+        # Always clear slot
         write_token(slot_id, "")
+
     svc_run("stop", slot_id)
+
     return jsonify({"ok": True})
 
 @app.route("/api/tokens/migrate", methods=["POST"])
@@ -821,6 +871,10 @@ select.wp-inp{cursor:pointer}
 .wp-bot-opt-name{font-size:13px;font-weight:600;color:#cdd6f4}
 .wp-bot-opt-desc{font-size:11px;color:#aee5ff;margin-top:3px}
 .wp-spin{display:inline-block;width:12px;height:12px;border:2px solid #00c8ff;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+.wp-modal-overlay {  position:fixed;inset:0;background: rgba(0,0,0,.6);display: none;align-items: center;justify-content: center;z-index: 999; opacity: 0;transition: opacity 0.2s ease;}
+.wp-modal-overlay.active {display: flex;opacity: 1;}
+.wp-modal {transform: scale(0.95);opacity: 0;transition: all 0.2s ease;}
+.wp-modal-overlay.active .wp-modal {transform: scale(1);opacity: 1;}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
@@ -1156,7 +1210,7 @@ async function loadTokens(){
       ${t.has_token?`
 <button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="migratePrompt('${t.slot_id}')">Move to…</button>
 <button class="wp-btn wp-btn-warn" style="font-size:10px;padding:4px 10px" onclick="returnToVault('${t.slot_id}')">Return</button>
-<button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="clearToken('${t.slot_id}')">Clear</button>
+<button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="openClearModal('${t.slot_id}')">Clear</button>
 `:''}
     </div></td>
   </tr>`).join('');
@@ -1185,11 +1239,47 @@ async function setTokenPrompt(sid){
   showMsg(r);loadTokens();
 }
 
-async function clearToken(sid){
-  if(!confirm(`Clear token for "${sid}"? The bot will stop.`)) return;
-  const r=await api('POST','/tokens/clear',{slot_id:sid});
-  showMsg(r);loadTokens();
+let _clearSlot = null;
+
+function openClearModal(slot_id){
+  _clearSlot = slot_id;
+  const modal = document.getElementById('clear-modal');
+  modal.classList.add('active');
 }
+
+function closeClearModal(){
+  const modal = document.getElementById('clear-modal');
+  modal.classList.remove('active');
+  _clearSlot = null;
+}
+
+async function confirmClear(mode){
+  if(!_clearSlot) return;
+
+  const r = await api('POST','/tokens/clear',{
+    slot_id: _clearSlot,
+    mode: mode
+  });
+
+  closeClearModal();
+  showMsg(r);
+  loadTokens();
+}
+
+// Ensure DOM exists before attaching listeners
+window.addEventListener('DOMContentLoaded', () => {
+  const modal = document.getElementById('clear-modal');
+
+  if(modal){
+    modal.addEventListener('click', (e) => {
+      if(e.target.id === 'clear-modal') closeClearModal();
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape') closeClearModal();
+  });
+});
 
 async function migratePrompt(src){
   const slots=_allSlots.filter(s=>s.slot_id!==src);
@@ -1310,6 +1400,36 @@ function toggleLog(sid,btn){
 // Init
 loadBots();
 </script>
+
+// Clear button Modal
+<div id="clear-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card">
+      <div class="wp-card-title">
+        <span class="wp-ic">⚠</span> Clear Token
+      </div>
+
+      <div style="font-size:13px;color:#aee5ff;margin-bottom:16px">
+        What would you like to do with this token?
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="wp-btn wp-btn-primary" onclick="confirmClear('vault')">
+          ↩ Return to Vault
+        </button>
+
+        <button class="wp-btn wp-btn-danger" onclick="confirmClear('delete')">
+          ✖ Delete Permanently
+        </button>
+
+        <button class="wp-btn wp-btn-ghost" onclick="closeClearModal()">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>"""
 
