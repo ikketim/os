@@ -1047,14 +1047,6 @@ function typeTag(t){
   return map[t]||`<span class="wp-type-tag">${esc(t)}</span>`;
 }
 
-async function returnToVault(slot_id){
-  if(!confirm(`Return token from "${slot_id}" to vault?`)) return;
-
-  const r = await api('POST','/vault/return',{slot_id});
-  showMsg(r);
-  loadTokens();
-}
-
 async function api(method,path,body){
   const opts={method,headers:{'Content-Type':'application/json'}};
   if(body) opts.body=JSON.stringify(body);
@@ -1210,9 +1202,8 @@ async function loadTokens(){
     <td><div class="wp-btn-row" style="gap:6px">
       <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="setTokenPrompt('${t.slot_id}')">Set Token</button>
       ${t.has_token?`
-<button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="migratePrompt('${t.slot_id}')">Move to…</button>
-<button class="wp-btn wp-btn-warn" style="font-size:10px;padding:4px 10px" onclick="returnToVault('${t.slot_id}')">Return</button>
-<button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="openClearModal('${t.slot_id}')">Clear</button>
+<button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="openMoveModal('${t.slot_id}')">MOVE TO...</button>
+<button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="openDeleteModal('${t.slot_id}')">DELETE</button>
 `:''}
     </div></td>
   </tr>`).join('');
@@ -1241,22 +1232,82 @@ async function setTokenPrompt(sid){
   showMsg(r);loadTokens();
 }
 
-let _clearSlot = null;
+let _activeSlotId = null;
 
-function openClearModal(slot_id){
-  _clearSlot = slot_id;
-  const modal = document.getElementById('clear-modal');
-  modal.classList.add('active');
+// --- MOVE / RETURN MODAL ---
+function openMoveModal(slot_id) {
+  _activeSlotId = slot_id;
+  const sel = document.getElementById('move-dest-slot');
+  const slots = _allSlots.filter(s => s.slot_id !== slot_id);
+  
+  sel.innerHTML = slots.length 
+    ? slots.map(s => `<option value="${esc(s.slot_id)}">${esc(s.slot_id)} (${esc(s.type)})</option>`).join('')
+    : '<option value="">-- No other slots available --</option>';
+    
+  document.getElementById('move-modal').classList.add('active');
 }
 
-function closeClearModal(){
-  const modal = document.getElementById('clear-modal');
-  modal.classList.remove('active');
-  _clearSlot = null;
+function closeMoveModal() {
+  document.getElementById('move-modal').classList.remove('active');
+  _activeSlotId = null;
 }
 
-async function confirmClear(mode){
-  if(!_clearSlot) return;
+async function confirmMove() {
+  if (!_activeSlotId) return;
+  const dst = document.getElementById('move-dest-slot').value;
+  if (!dst) { alert('No destination slot selected.'); return; }
+  
+  const r = await api('POST', '/tokens/migrate', {from_slot: _activeSlotId, to_slot: dst});
+  closeMoveModal();
+  showMsg(r);
+  loadTokens();
+}
+
+async function confirmReturn() {
+  if (!_activeSlotId) return;
+  const r = await api('POST', '/vault/return', {slot_id: _activeSlotId});
+  closeMoveModal();
+  showMsg(r);
+  loadTokens();
+}
+
+// --- DELETE MODAL ---
+function openDeleteModal(slot_id) {
+  _activeSlotId = slot_id;
+  document.getElementById('delete-modal').classList.add('active');
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.remove('active');
+  _activeSlotId = null;
+}
+
+async function confirmDelete() {
+  if (!_activeSlotId) return;
+  const r = await api('POST', '/tokens/clear', { slot_id: _activeSlotId, mode: 'delete' });
+  closeDeleteModal();
+  showMsg(r);
+  loadTokens();
+}
+
+// --- GLOBAL MODAL EVENTS ---
+window.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.wp-modal-overlay').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        closeMoveModal();
+        closeDeleteModal();
+      }
+    });
+  });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeMoveModal();
+    closeDeleteModal();
+  }
+});
 
   const r = await api('POST','/tokens/clear',{
     slot_id: _clearSlot,
@@ -1283,14 +1334,6 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-async function migratePrompt(src){
-  const slots=_allSlots.filter(s=>s.slot_id!==src);
-  if(!slots.length){alert('No other slots to migrate to.');return;}
-  const dst=prompt(`Move token from "${src}" to which slot?\n\nAvailable: ${slots.map(s=>s.slot_id).join(', ')}`);
-  if(!dst) return;
-  const r=await api('POST','/tokens/migrate',{from_slot:src,to_slot:dst.trim()});
-  showMsg(r);loadTokens();
-}
 
 async function vaultAdd(){
   const token=(document.getElementById('vault-token').value||'').trim();
@@ -1403,28 +1446,57 @@ function toggleLog(sid,btn){
 loadBots();
 </script>
 
-// Clear button Modal
-<div id="clear-modal" class="wp-modal-overlay">
+<!-- Move / Return Modal -->
+<div id="move-modal" class="wp-modal-overlay">
   <div class="wp-modal">
-    <div class="wp-card">
+    <div class="wp-card" style="min-width: 300px;">
       <div class="wp-card-title">
-        <span class="wp-ic">⚠</span> Clear Token
+        <span class="wp-ic">➡</span> Move Token
       </div>
 
       <div style="font-size:13px;color:#aee5ff;margin-bottom:16px">
-        What would you like to do with this token?
+        Where would you like to move this token?
+      </div>
+
+      <div class="wp-form-group" style="margin-bottom: 20px;">
+        <span class="wp-form-label">Destination Slot</span>
+        <select class="wp-inp" id="move-dest-slot"></select>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:10px">
-        <button class="wp-btn wp-btn-primary" onclick="confirmClear('vault')">
+        <button class="wp-btn wp-btn-primary" onclick="confirmMove()">
+          ➡ Move to Slot
+        </button>
+        <div style="text-align:center;color:#6c7a96;font-size:11px;margin:2px 0;">OR</div>
+        <button class="wp-btn wp-btn-warn" onclick="confirmReturn()">
           ↩ Return to Vault
         </button>
-
-        <button class="wp-btn wp-btn-danger" onclick="confirmClear('delete')">
-          ✖ Delete Permanently
+        <button class="wp-btn wp-btn-ghost" onclick="closeMoveModal()" style="margin-top:4px;">
+          Cancel
         </button>
+      </div>
+    </div>
+  </div>
+</div>
 
-        <button class="wp-btn wp-btn-ghost" onclick="closeClearModal()">
+<!-- Delete Modal -->
+<div id="delete-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 300px;">
+      <div class="wp-card-title">
+        <span class="wp-ic">⚠</span> Delete Token
+      </div>
+
+      <div style="font-size:13px;color:#aee5ff;margin-bottom:16px">
+        Are you sure you want to permanently delete this token from the slot?<br><br>
+        <strong style="color:#ff5a7a">It will NOT be returned to the vault.</strong>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="wp-btn wp-btn-danger" onclick="confirmDelete()">
+          ✖ Delete Anyways
+        </button>
+        <button class="wp-btn wp-btn-ghost" onclick="closeDeleteModal()">
           Cancel
         </button>
       </div>
