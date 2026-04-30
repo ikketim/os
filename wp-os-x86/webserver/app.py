@@ -566,7 +566,7 @@ def api_token_migrate():
 def api_vault_add():
     data = request.json or {}
     token = data.get("token", "").strip()
-    comment = data.get("comment", "").strip() # <- Add this line
+    comment = data.get("comment", "").strip()
     
     if not token:
         return jsonify({"error": "token required"}), 400
