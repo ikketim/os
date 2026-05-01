@@ -495,6 +495,17 @@ def api_token_set():
         old = read_token(slot_id)
         if old:
             reg["tokens"].pop(sha256t(old), None)
+            # --- VAULT SAFETY ---
+            v = vault_get()
+            if not any(sha256t(e.get("token","")) == sha256t(old) for e in v["tokens"]):
+                bot_name = get_discord_bot_name(old)
+                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Overwritten on {slot_id}"
+                v["tokens"].append({
+                    "token": old,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                vault_save(v)
 
         write_token(slot_id, token)
         reg["tokens"][h] = slot_id
@@ -573,11 +584,23 @@ def api_token_migrate():
         dst_old = read_token(dst)
         if dst_old:
             reg["tokens"].pop(sha256t(dst_old), None)
+            # --- VAULT SAFETY ---
+            v = vault_get()
+            if not any(sha256t(e.get("token","")) == sha256t(dst_old) for e in v["tokens"]):
+                bot_name = get_discord_bot_name(dst_old)
+                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Bumped from {dst} by migration"
+                v["tokens"].append({
+                    "token": dst_old,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                vault_save(v)
 
         write_token(dst, tok)
         reg["tokens"][h] = dst
         write_token(src, "")
         registry_save(reg)
+        
     svc_run("stop", src)
     svc_run("restart", dst)
     return jsonify({"ok": True})
@@ -661,6 +684,15 @@ def api_vault_assign():
         old = read_token(slot_id)
         if old:
             reg["tokens"].pop(sha256t(old), None)
+            # --- VAULT SAFETY ---
+            if not any(sha256t(e.get("token","")) == sha256t(old) for e in v["tokens"]):
+                bot_name = get_discord_bot_name(old)
+                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Bumped from {slot_id} by Vault assignment"
+                v["tokens"].append({
+                    "token": old,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
 
         write_token(slot_id, token)
         reg["tokens"][h] = slot_id
