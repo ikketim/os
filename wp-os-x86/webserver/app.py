@@ -870,7 +870,18 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-inp{background:rgba(0,0,0,.35);border:1px solid #1e2a3a;border-radius:6px;color:#cdd6f4;padding:8px 12px;font-family:'Share Tech Mono',monospace;font-size:12px;width:100%}
 .wp-inp:focus{outline:none;border-color:#00c8ff}
 .wp-inp::placeholder{color:#3c4e6a}
-select.wp-inp{cursor:pointer}
+/* Custom Dropdown Wrapper */
+.wp-sel-wrap { position: relative; width: 100%; min-width: 140px; user-select: none; }
+/* The visible click-box */
+.wp-sel-box { background: rgba(0,0,0,.35); border: 1px solid #1e2a3a; border-radius: 6px; color: #cdd6f4; padding: 6px 32px 6px 12px; font-family: 'Share Tech Mono', monospace; font-size: 12px; cursor: pointer; transition: .15s; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236c7a96' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.wp-sel-box:hover { border-color: #00c8ff; }
+/* The floating menu */
+.wp-sel-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #283d66; border: 1px solid #00c8ff; border-radius: 6px; z-index: 100; display: none; overflow: hidden; box-shadow: 0 8px 16px rgba(0,0,0,.5); }
+.wp-sel-menu.open { display: block; }
+/* The items inside the menu */
+.wp-sel-item { padding: 8px 12px; font-family: 'Share Tech Mono', monospace; font-size: 12px; color: #cdd6f4; cursor: pointer; transition: padding .15s, background .15s, color .15s; border-bottom: 1px solid #1e2a3a; }
+.wp-sel-item:last-child { border-bottom: none; }
+.wp-sel-item:hover { background: rgba(0,200,255,.14); color: #00c8ff; padding-left: 16px; } /* Sleek slide effect */
 .wp-form-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px}
 .wp-form-group{display:flex;flex-direction:column;gap:5px;min-width:140px}
 .wp-form-label{font-size:11px;letter-spacing:2px;color:#6c7a96;text-transform:uppercase}
@@ -1045,6 +1056,111 @@ select.wp-inp{cursor:pointer}
 <script>
 let _slots=[], _allSlots=[], _selBotType='wos-py';
 
+// --- CUSTOM PORTAL DROPDOWN ENGINE ---
+
+// Close menus on click-outside
+document.addEventListener('click', (e) => {
+  if(!e.target.closest('.wp-sel-wrap') && !e.target.closest('.wp-sel-menu')) {
+    closeAllMenus();
+  }
+});
+
+// Close menus instantly on any scrolling or resizing
+window.addEventListener('resize', closeAllMenus);
+document.addEventListener('scroll', (e) => {
+  if (!e.target.closest('.wp-sel-menu')) closeAllMenus();
+}, true);
+
+function closeAllMenus() {
+  // Find menus trapped in the body and send them back to their wrappers
+  document.querySelectorAll('body > .wp-sel-menu').forEach(m => {
+    m.classList.remove('open');
+    if (m.originalParent) m.originalParent.appendChild(m);
+  });
+  document.querySelectorAll('.wp-sel-menu').forEach(m => m.classList.remove('open'));
+}
+
+function toggleCustomSel(menuId, boxId) {
+  const menu = document.getElementById(menuId);
+  const box = document.getElementById(boxId);
+  
+  if (menu.classList.contains('open')) {
+    closeAllMenus();
+    return;
+  }
+
+  closeAllMenus();
+
+  // Remember its original home before we portal it
+  if (!menu.originalParent) {
+    menu.originalParent = menu.parentElement;
+  }
+
+  // Portal to body
+  document.body.appendChild(menu);
+  
+  // Calculate exact coordinates
+  const rect = box.getBoundingClientRect();
+  menu.style.position = 'absolute';
+  menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  menu.style.left = (rect.left + window.scrollX) + 'px';
+  menu.style.width = rect.width + 'px';
+  menu.style.margin = '0'; 
+  menu.style.zIndex = '99999'; // Forces it above the modal!
+  
+  menu.classList.add('open');
+}
+
+function pickCustomSel(menuId, inputId, val, text) {
+  document.getElementById('box-' + menuId).textContent = text;
+  document.getElementById(inputId).value = val;
+  closeAllMenus(); 
+}
+
+// --- MODAL CONTROLLERS ---
+function customPrompt(title, message, inputType = 'text') {
+  return new Promise(resolve => {
+    const modal = document.getElementById('custom-prompt-modal');
+    document.getElementById('c-prompt-title').textContent = title;
+    document.getElementById('c-prompt-msg').innerHTML = message;
+    
+    const input = document.getElementById('c-prompt-input');
+    input.type = inputType;
+    input.value = '';
+    
+    modal.classList.add('active');
+    setTimeout(() => input.focus(), 100);
+
+    const cleanup = () => { modal.classList.remove('active'); };
+
+    document.getElementById('c-prompt-ok').onclick = () => { cleanup(); resolve(input.value); };
+    document.getElementById('c-prompt-cancel').onclick = () => { cleanup(); resolve(null); };
+  });
+}
+
+function customConfirm(title, message, isAlert = false, isDanger = false) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('custom-confirm-modal');
+    document.getElementById('c-confirm-title').textContent = title;
+    document.getElementById('c-confirm-msg').innerHTML = message;
+    document.getElementById('c-confirm-ic').textContent = isAlert ? 'ℹ' : '⚠';
+    
+    modal.classList.add('active');
+
+    const btnOk = document.getElementById('c-confirm-ok');
+    const btnCancel = document.getElementById('c-confirm-cancel');
+
+    btnOk.className = 'wp-btn ' + (isDanger ? 'wp-btn-danger' : 'wp-btn-primary');
+    btnOk.textContent = isAlert ? 'Dismiss' : 'Confirm';
+    btnCancel.style.display = isAlert ? 'none' : 'inline-flex';
+
+    const cleanup = () => { modal.classList.remove('active'); };
+
+    btnOk.onclick = () => { cleanup(); resolve(true); };
+    btnCancel.onclick = () => { cleanup(); resolve(false); };
+  });
+}
+
 function showTab(id,btn){
   document.querySelectorAll('.wp-page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.wp-nav button').forEach(b=>b.classList.remove('active'));
@@ -1182,9 +1298,10 @@ function pollInstallLog(sid){
 }
 
 async function removeSlot(sid){
-  if(!confirm(`Remove slot "${sid}"?\n\nThis permanently deletes all bot files. The bot will be stopped.`)) return;
-  const r=await api('DELETE',`/slots/${sid}`);
-  if(r.error) alert(r.error); else loadBots();
+  const ok = await customConfirm('Remove Slot', `Are you sure you want to remove <strong style="color:#00c8ff">${esc(sid)}</strong>?<br><br><span style="color:#ff5a7a">This permanently deletes all bot files.</span>`, false, true);
+  if(!ok) return;
+  const r = await api('DELETE',`/slots/${sid}`);
+  if(r.error) await customConfirm('Error', r.error, true); else loadBots();
 }
 
 function pickBotType(type,el){
@@ -1234,29 +1351,49 @@ async function loadTokens(){
 `:''}
     </div></td>
   </tr>`).join('');
+
   const vbody=document.getElementById('vault-body');
   if(!d.vault.length){
     vbody.innerHTML='<tr><td colspan="4" style="color:#6c7a96;padding:16px 12px">No tokens in vault. Add one above.</td></tr>';
     return;
   }
-  const slotOpts=d.active.map(s=>`<option value="${esc(s.slot_id)}">${esc(s.slot_id)} (${esc(s.type)})</option>`).join('');
-  vbody.innerHTML=d.vault.map(v=>`<tr>
+
+  vbody.innerHTML=d.vault.map(v=>{
+    
+    // Generating options INSIDE the loop so it knows the correct token_hash!
+    const slotOpts = d.active.map(s => 
+      `<div class="wp-sel-item" onclick="pickCustomSel('menu-${v.token_hash}', 'asgn-${v.token_hash}', '${esc(s.slot_id)}', '${esc(s.slot_id)} (${esc(s.type)})')">${esc(s.slot_id)} (${esc(s.type)})</div>`
+    ).join('');
+
+    return `<tr>
     <td style="font-family:'Share Tech Mono',monospace;color:#cdd6f4">${esc(v.token_mask)}</td>
     <td style="color:#aee5ff">${v.comment ? esc(v.comment) : '&#8212;'}</td>
     <td style="color:#6c7a96;font-size:11px">${esc(v.added.slice(0,10))}</td>
     <td><div class="wp-btn-row" style="gap:6px">
-      <select class="wp-inp" id="asgn-${v.token_hash}" style="min-width:130px;padding:4px 8px"><option value="">Select slot&hellip;</option>${slotOpts}</select>
+      
+      <!-- NEW CUSTOM DROPDOWN -->
+      <div class="wp-sel-wrap">
+        <div class="wp-sel-box" id="box-menu-${v.token_hash}" onclick="toggleCustomSel('menu-${v.token_hash}', this.id)">Select slot...</div>
+        <div class="wp-sel-menu" id="menu-${v.token_hash}">
+          <div class="wp-sel-item" onclick="pickCustomSel('menu-${v.token_hash}', 'asgn-${v.token_hash}', '', 'Select slot...')">Select slot...</div>
+          ${slotOpts}
+        </div>
+        <input type="hidden" id="asgn-${v.token_hash}" value="">
+      </div>
+      <!-- END CUSTOM DROPDOWN -->
+
       <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="assignVault('${v.token_hash}')">Assign</button>
       <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="removeVault('${v.token_hash}')">Remove</button>
     </div></td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 }
 
 async function setTokenPrompt(sid){
-  const tok=prompt(`Enter new Discord bot token for slot "${sid}":`);
+  const tok = await customPrompt('Set Token', `Enter new Discord bot token for slot <strong style="color:#00c8ff">${esc(sid)}</strong>:`, 'password');
   if(!tok) return;
-  const r=await api('POST','/tokens/set',{slot_id:sid,token:tok.trim()});
-  showMsg(r);loadTokens();
+  const r = await api('POST','/tokens/set',{slot_id:sid, token:tok.trim()});
+  showMsg(r); loadTokens();
 }
 
 let _activeSlotId = null;
@@ -1264,12 +1401,21 @@ let _activeSlotId = null;
 // --- MOVE / RETURN MODAL ---
 function openMoveModal(slot_id) {
   _activeSlotId = slot_id;
-  const sel = document.getElementById('move-dest-slot');
   const slots = _allSlots.filter(s => s.slot_id !== slot_id);
   
-  sel.innerHTML = slots.length 
-    ? slots.map(s => `<option value="${esc(s.slot_id)}">${esc(s.slot_id)} (${esc(s.type)})</option>`).join('')
-    : '<option value="">-- No other slots available --</option>';
+  const selHTML = slots.length 
+    ? slots.map(s => `<div class="wp-sel-item" onclick="pickCustomSel('menu-move', 'move-dest-slot', '${esc(s.slot_id)}', '${esc(s.slot_id)} (${esc(s.type)})')">${esc(s.slot_id)} (${esc(s.type)})</div>`).join('')
+    : `<div class="wp-sel-item" onclick="pickCustomSel('menu-move', 'move-dest-slot', '', '-- No other slots available --')">-- No other slots available --</div>`;
+    
+  document.getElementById('move-custom-inject').innerHTML = `
+    <div class="wp-sel-wrap">
+      <div class="wp-sel-box" id="box-menu-move" onclick="toggleCustomSel('menu-move', this.id)">Select destination...</div>
+      <div class="wp-sel-menu" id="menu-move">
+        ${selHTML}
+      </div>
+      <input type="hidden" id="move-dest-slot" value="">
+    </div>
+  `;
     
   document.getElementById('move-modal').classList.add('active');
 }
@@ -1282,7 +1428,7 @@ function closeMoveModal() {
 async function confirmMove() {
   if (!_activeSlotId) return;
   const dst = document.getElementById('move-dest-slot').value;
-  if (!dst) { alert('No destination slot selected.'); return; }
+  if (!dst) { await customConfirm('Notice', 'No destination slot selected.', true); return; }
   
   const r = await api('POST', '/tokens/migrate', {from_slot: _activeSlotId, to_slot: dst});
   closeMoveModal();
@@ -1348,17 +1494,18 @@ async function vaultAdd(){
 }
 
 async function removeVault(h){
-  if(!confirm('Remove this token from vault?')) return;
-  const r=await api('DELETE',`/vault/${h}`);
-  showMsg(r);loadTokens();
+  const ok = await customConfirm('Remove Token', 'Are you sure you want to remove this token from the vault?', false, true);
+  if(!ok) return;
+  const r = await api('DELETE',`/vault/${h}`);
+  showMsg(r); loadTokens();
 }
 
 async function assignVault(h){
-  const sel=document.getElementById(`asgn-${h}`);
-  const sid=sel?sel.value:'';
-  if(!sid){alert('Select a slot first.');return;}
-  const r=await api('POST','/vault/assign',{token_hash:h,slot_id:sid});
-  showMsg(r);loadTokens();
+  const sel = document.getElementById(`asgn-${h}`);
+  const sid = sel ? sel.value : '';
+  if(!sid){ await customConfirm('Notice', 'Please select a destination slot first.', true); return; }
+  const r = await api('POST','/vault/assign',{token_hash:h, slot_id:sid});
+  showMsg(r); loadTokens();
 }
 
 function showMsg(r){
@@ -1382,9 +1529,10 @@ async function loadSystem(){
 }
 
 async function restartAll(){
-  if(!confirm('Restart all running bots?')) return;
-  const r=await api('POST','/system/restart-all');
-  alert(`Restarted: ${(r.restarted||[]).join(', ')||'none'}`);
+  const ok = await customConfirm('Restart All', 'Are you sure you want to restart all running bots?', false, false);
+  if(!ok) return;
+  const r = await api('POST','/system/restart-all');
+  await customConfirm('Success', `Restarted: <br><strong style="color:#00e676">${(r.restarted||[]).join(', ') || 'none'}</strong>`, true);
   loadSystem();
 }
 
@@ -1461,7 +1609,7 @@ loadBots();
 
       <div class="wp-form-group" style="margin-bottom: 20px;">
         <span class="wp-form-label">Destination Slot</span>
-        <select class="wp-inp" id="move-dest-slot"></select>
+        <div id="move-custom-inject"></div>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:10px">
@@ -1500,6 +1648,35 @@ loadBots();
         <button class="wp-btn wp-btn-ghost" onclick="closeDeleteModal()">
           Cancel
         </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Input Modal -->
+<div id="custom-prompt-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 320px;">
+      <div class="wp-card-title"><span class="wp-ic">💬</span> <span id="c-prompt-title">Input</span></div>
+      <div id="c-prompt-msg" style="font-size:13px;color:#aee5ff;margin-bottom:16px"></div>
+      <input class="wp-inp" id="c-prompt-input" style="margin-bottom:16px;">
+      <div class="wp-btn-row">
+        <button class="wp-btn wp-btn-primary" id="c-prompt-ok">Submit</button>
+        <button class="wp-btn wp-btn-ghost" id="c-prompt-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Confirm/Alert Modal -->
+<div id="custom-confirm-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 320px;">
+      <div class="wp-card-title"><span class="wp-ic" id="c-confirm-ic">⚠</span> <span id="c-confirm-title">Confirm</span></div>
+      <div id="c-confirm-msg" style="font-size:13px;color:#aee5ff;margin-bottom:20px;line-height:1.5;"></div>
+      <div class="wp-btn-row">
+        <button class="wp-btn wp-btn-primary" id="c-confirm-ok">Confirm</button>
+        <button class="wp-btn wp-btn-ghost" id="c-confirm-cancel">Cancel</button>
       </div>
     </div>
   </div>
