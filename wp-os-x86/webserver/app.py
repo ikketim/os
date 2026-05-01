@@ -12,6 +12,8 @@ import re
 import shutil
 import subprocess
 import threading
+import certifi
+import ssl
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -190,15 +192,29 @@ def get_type_count(bot_type, exclude_slot=None):
 
 def get_discord_bot_name(token: str) -> str:
     try:
+	# Force Python to use Mozilla's updated certificates
+        secure_context = ssl.create_default_context(cafile=certifi.where())
+
         req = urllib.request.Request(
             "https://discord.com/api/v10/users/@me",
-            headers={"Authorization": f"Bot {token}"}
+            headers={
+                "Authorization": f"Bot {token}",
+                "User-Agent": "WP-OS (wp-os, 1.0)"
+            }
         )
-        with urllib.request.urlopen(req, timeout=5) as res:
+
+        with urllib.request.urlopen(req, timeout=5,context=secure_context) as res:
             data = json.loads(res.read().decode())
             return data.get("username", "")
-    except Exception:
-        return ""
+
+    except urllib.error.HTTPError as e:
+        return f"Failed: HTTP {e.code}"
+
+    except urllib.error.URLError as e:
+        return f"Failed: Netword/SSL"
+
+    except Exception as e:
+        return f"Failed: Unknown Error"
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -1226,7 +1242,7 @@ async function loadTokens(){
   const slotOpts=d.active.map(s=>`<option value="${esc(s.slot_id)}">${esc(s.slot_id)} (${esc(s.type)})</option>`).join('');
   vbody.innerHTML=d.vault.map(v=>`<tr>
     <td style="font-family:'Share Tech Mono',monospace;color:#cdd6f4">${esc(v.token_mask)}</td>
-    <td style="color:#aee5ff">${esc(v.comment||'&#8212;')}</td>
+    <td style="color:#aee5ff">${v.comment ? esc(v.comment) : '&#8212;'}</td>
     <td style="color:#6c7a96;font-size:11px">${esc(v.added.slice(0,10))}</td>
     <td><div class="wp-btn-row" style="gap:6px">
       <select class="wp-inp" id="asgn-${v.token_hash}" style="min-width:130px;padding:4px 8px"><option value="">Select slot&hellip;</option>${slotOpts}</select>
