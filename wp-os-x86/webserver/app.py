@@ -510,6 +510,13 @@ def api_token_set():
         write_token(slot_id, token)
         reg["tokens"][h] = slot_id
         registry_save(reg)
+        
+        # --- NEW: VAULT DUPLICATE CLEANUP ---
+        # If the newly set token was sitting in the vault, delete it!
+        v = vault_get()
+        v["tokens"] = [e for e in v["tokens"] if sha256t(e.get("token","")) != h]
+        vault_save(v)
+
     svc_run("restart", slot_id)
     return jsonify({"ok": True})
 
@@ -588,7 +595,7 @@ def api_token_migrate():
             v = vault_get()
             if not any(sha256t(e.get("token","")) == sha256t(dst_old) for e in v["tokens"]):
                 bot_name = get_discord_bot_name(dst_old)
-                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Bumped from {dst} by migration"
+                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Bumped from {dst}"
                 v["tokens"].append({
                     "token": dst_old,
                     "comment": comment,
@@ -687,7 +694,7 @@ def api_vault_assign():
             # --- VAULT SAFETY ---
             if not any(sha256t(e.get("token","")) == sha256t(old) for e in v["tokens"]):
                 bot_name = get_discord_bot_name(old)
-                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Bumped from {slot_id} by Vault assignment"
+                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Bumped from {slot_id}"
                 v["tokens"].append({
                     "token": old,
                     "comment": comment,
@@ -886,7 +893,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-token-mask.has-token{color:#00e676}
 .wp-not-installed{background:rgba(255,107,53,.08);border:1px solid rgba(255,107,53,.3);border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:12px;color:#ff9966}
 .wp-not-installed span{flex:1}
-.wp-btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.wp-btn-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px}
 .wp-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 16px;border:none;border-radius:6px;font-family:'Exo 2',sans-serif;font-size:11px;font-weight:600;letter-spacing:1px;cursor:pointer;text-transform:uppercase;transition:.15s}
 .wp-btn-success{background:#00e676;color:#000}
 .wp-btn-success:hover{background:#00d068}
@@ -903,7 +910,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-inp:focus{outline:none;border-color:#00c8ff}
 .wp-inp::placeholder{color:#3c4e6a}
 /* Custom Dropdown Wrapper */
-.wp-sel-wrap { position: relative; width: 100%; min-width: 140px; user-select: none; }
+.wp-sel-wrap { position: relative; flex: 1; min-width: 140px; max-width: 240px; user-select: none; }
 /* The visible click-box */
 .wp-sel-box { background: rgba(0,0,0,.35); border: 1px solid #1e2a3a; border-radius: 6px; color: #cdd6f4; padding: 6px 32px 6px 12px; font-family: 'Share Tech Mono', monospace; font-size: 12px; cursor: pointer; transition: .15s; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236c7a96' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
 .wp-sel-box:hover { border-color: #00c8ff; }
@@ -1205,10 +1212,25 @@ function customPrompt(title, message, inputType = 'text') {
     modal.classList.add('active');
     setTimeout(() => input.focus(), 100);
 
-    const cleanup = () => { modal.classList.remove('active'); };
+    // Clean up event listeners so we don't cause memory leaks
+    const cleanup = () => { 
+      modal.classList.remove('active'); 
+      modal.removeEventListener('click', overlayClick);
+      document.removeEventListener('keydown', escapeKey);
+    };
 
-    document.getElementById('c-prompt-ok').onclick = () => { cleanup(); resolve(input.value); };
-    document.getElementById('c-prompt-cancel').onclick = () => { cleanup(); resolve(null); };
+    // Helper to close and resolve
+    const resolveWith = (val) => { cleanup(); resolve(val); };
+
+    // The safety nets: Click outside or hit Escape to cancel
+    const overlayClick = (e) => { if (e.target === modal) resolveWith(null); };
+    const escapeKey = (e) => { if (e.key === 'Escape') resolveWith(null); };
+
+    document.getElementById('c-prompt-ok').onclick = () => resolveWith(input.value);
+    document.getElementById('c-prompt-cancel').onclick = () => resolveWith(null);
+    
+    modal.addEventListener('click', overlayClick);
+    document.addEventListener('keydown', escapeKey);
   });
 }
 
@@ -1217,7 +1239,7 @@ function customConfirm(title, message, isAlert = false, isDanger = false) {
     const modal = document.getElementById('custom-confirm-modal');
     document.getElementById('c-confirm-title').textContent = title;
     document.getElementById('c-confirm-msg').innerHTML = message;
-    document.getElementById('c-confirm-ic').textContent = isAlert ? 'ℹ' : '⚠';
+    document.getElementById('c-confirm-ic').textContent = isAlert ? '?' : '?';
     
     modal.classList.add('active');
 
@@ -1228,10 +1250,25 @@ function customConfirm(title, message, isAlert = false, isDanger = false) {
     btnOk.textContent = isAlert ? 'Dismiss' : 'Confirm';
     btnCancel.style.display = isAlert ? 'none' : 'inline-flex';
 
-    const cleanup = () => { modal.classList.remove('active'); };
+    // Clean up event listeners
+    const cleanup = () => { 
+      modal.classList.remove('active'); 
+      modal.removeEventListener('click', overlayClick);
+      document.removeEventListener('keydown', escapeKey);
+    };
 
-    btnOk.onclick = () => { cleanup(); resolve(true); };
-    btnCancel.onclick = () => { cleanup(); resolve(false); };
+    // Helper to close and resolve
+    const resolveWith = (val) => { cleanup(); resolve(val); };
+
+    // The safety nets: Click outside or hit Escape to cancel
+    const overlayClick = (e) => { if (e.target === modal) resolveWith(false); };
+    const escapeKey = (e) => { if (e.key === 'Escape') resolveWith(false); };
+
+    btnOk.onclick = () => resolveWith(true);
+    btnCancel.onclick = () => resolveWith(false);
+    
+    modal.addEventListener('click', overlayClick);
+    document.addEventListener('keydown', escapeKey);
   });
 }
 
@@ -1264,11 +1301,41 @@ function typeTag(t){
   return map[t]||`<span class="wp-type-tag">${esc(t)}</span>`;
 }
 
-async function api(method,path,body){
+// Global tracker for the last clicked button
+let _lastClickedBtn = null;
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.wp-btn');
+  if (b) _lastClickedBtn = b;
+}, true);
+
+// Upgraded API function with auto-loading states
+async function api(method, path, body){
+  // Grab the button that triggered this (if any) and lock it
+  const btn = _lastClickedBtn;
+  _lastClickedBtn = null; 
+  let oldText = '';
+  
+  if (btn) {
+    btn.disabled = true;
+    oldText = btn.innerHTML;
+    btn.innerHTML = '<span class="wp-spin" style="width:10px;height:10px;margin-right:6px"></span> Wait...';
+  }
+
   const opts={method,headers:{'Content-Type':'application/json'}};
   if(body) opts.body=JSON.stringify(body);
-  const r=await fetch('/api'+path,opts);
-  return r.json();
+  
+  try {
+    const r=await fetch('/api'+path,opts);
+    return await r.json();
+  } catch(e) {
+    return {error: 'Network connection failed.'};
+  } finally {
+    // Always unlock the button when finished, even if it errors
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = oldText;
+    }
+  }
 }
 
 // ---- BOTS ----
