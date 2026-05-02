@@ -759,6 +759,8 @@ def api_vault_return():
 # ---------------------------------------------------------------------------
 # System API
 # ---------------------------------------------------------------------------
+_cpu_last = (0.0, 0.0) # Tracks (total_time, idle_time) for CPU percentage
+
 @app.route("/api/system", methods=["GET"])
 def api_system():
     import socket
@@ -796,6 +798,65 @@ def api_system():
         "services": services,
         "log_tail": log_lines,
     })
+
+@app.route("/api/system/vitals", methods=["GET"])
+def api_system_vitals():
+    # 1. CPU Calculation (Pure Python, no dependencies)
+    global _cpu_last
+    cpu_percent = 0.0
+    try:
+        with open('/proc/stat') as f:
+            fields = [float(column) for column in f.readline().strip().split()[1:]]
+        idle = fields[3] + fields[4]  # idle + iowait
+        total = sum(fields)
+        idle_delta = idle - _cpu_last[1]
+        total_delta = total - _cpu_last[0]
+        _cpu_last = (total, idle)
+        if total_delta > 0:
+            cpu_percent = 100.0 * (1.0 - idle_delta / total_delta)
+    except: pass
+
+    # 2. RAM Calculation
+    ram_percent, ram_text = 0.0, "Unknown"
+    try:
+        with open('/proc/meminfo') as f:
+            lines = f.readlines()
+        mem_total = mem_avail = 0
+        for line in lines:
+            if line.startswith('MemTotal:'): mem_total = int(line.split()[1])
+            elif line.startswith('MemAvailable:'): mem_avail = int(line.split()[1])
+        if mem_total > 0:
+            mem_used = mem_total - mem_avail
+            ram_percent = (mem_used / mem_total) * 100.0
+            ram_text = f"{mem_used / 1024 / 1024:.1f}GB / {mem_total / 1024 / 1024:.1f}GB"
+    except: pass
+
+    # 3. Disk Calculation
+    disk_percent, disk_text = 0.0, "Unknown"
+    try:
+        total, used, free = shutil.disk_usage("/")
+        if total > 0:
+            disk_percent = (used / total) * 100.0
+            disk_text = f"{used / (1024**3):.1f}GB / {total / (1024**3):.1f}GB"
+    except: pass
+
+    return jsonify({
+        "cpu": round(cpu_percent, 1),
+        "ram": round(ram_percent, 1),
+        "ram_text": ram_text,
+        "disk": round(disk_percent, 1),
+        "disk_text": disk_text
+    })
+
+@app.route("/api/badges", methods=["GET"])
+def api_badges():
+    failed_count = 0
+    if BOTS_DIR.exists():
+        for d in BOTS_DIR.iterdir():
+            if d.is_dir() and (d / ".meta.json").exists():
+                if svc_status(d.name) == "failed":
+                    failed_count += 1
+    return jsonify({"failed_bots": failed_count})
 
 @app.route("/api/system/restart-all", methods=["POST"])
 def api_restart_all():
@@ -997,6 +1058,24 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
   .wp-table td .wp-btn-row .wp-sel-wrap { flex: 1 1 100%; }
   .wp-table td .wp-btn-row .wp-btn { flex: 1; justify-content: center; }
 }
+
+/* Progress Bars */
+.wp-progress-wrap { background: rgba(0,0,0,.3); border-radius: 4px; height: 6px; width: 100%; margin-top: 8px; overflow: hidden; position: relative; }
+.wp-progress-fill { height: 100%; background: #00c8ff; border-radius: 4px; transition: width 0.5s ease, background-color 0.5s ease; }
+.wp-progress-fill.warn { background: #ffea00; }
+.wp-progress-fill.danger { background: #ff1744; }
+
+/* Colorized Logs */
+.log-error { color: #ff5a7a; font-weight: 700; text-shadow: 0 0 8px rgba(255,90,122,.4); }
+.log-warn { color: #ffea00; font-weight: 700; }
+.log-info { color: #00e676; }
+.log-date { color: #6c7a96; user-select: none; }
+.wp-log-box { scroll-behavior: smooth; }
+
+/* Nav Badges */
+.wp-nav-badge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff1744; box-shadow: 0 0 8px #ff1744; vertical-align: middle; margin-left: 6px; opacity: 0; transition: opacity 0.3s ease; }
+.wp-nav-badge.active { opacity: 1; }
+
 </style>
 </head>
 <body>
@@ -1013,7 +1092,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 </div>
 
 <nav class="wp-nav">
-  <button class="active" onclick="showTab('bots',this)">⚡ Bots</button>
+  <button class="active" onclick="showTab('bots',this)">⚡ Bots <span id="badge-bots" class="wp-nav-badge"></span></button>
   <button onclick="showTab('tokens',this)">🔑 Tokens</button>
   <button onclick="showTab('system',this)">🖥 System</button>
 </nav>
@@ -1277,9 +1356,50 @@ function showTab(id,btn){
   document.querySelectorAll('.wp-nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   btn.classList.add('active');
+  
+  // Turn off vitals polling if we leave the system tab
+  if(_vitalsPoll) { clearInterval(_vitalsPoll); _vitalsPoll = null; }
+  
   if(id==='bots') loadBots();
   if(id==='tokens') loadTokens();
-  if(id==='system') loadSystem();
+  if(id==='system') {
+    loadSystem();
+    // Start polling CPU/RAM every 2.5 seconds
+    _vitalsPoll = setInterval(pollVitals, 2500); 
+    pollVitals(); 
+  }
+}
+
+// Universal Smart Colorizer Engine
+function formatLogLine(line) {
+  // 1. JSON Log Detection (for Node.js Winston/Pino)
+  const trimmed = line.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const obj = JSON.parse(trimmed);
+      const level = obj.level ? ` [${obj.level.toUpperCase()}]` : '';
+      const msg = obj.message || obj.msg || '';
+      return `<span class="log-date">JSON Log${level}</span> ${esc(msg)}`;
+    } catch(e) {} // Not valid JSON, fall back to standard parsing
+  }
+
+  // 2. Escape HTML to prevent injection
+  let html = esc(line);
+
+  // 3. Universal Timestamps (Catches YYYY-MM-DD or HH:MM:SS anywhere)
+  html = html.replace(/\b(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\b/g, '<span class="log-date">$1</span>');
+  html = html.replace(/\b(\d{2}:\d{2}:\d{2})\b/g, '<span class="log-date">$1</span>');
+
+  // 4. Universal Bracket Tags (Dims things like [INFO] or [Core])
+  html = html.replace(/\[(.*?)\]/g, '<span class="log-date">[$1]</span>');
+
+  // 5. Semantic Log Levels (Case Insensitive)
+  html = html.replace(/\b(ERROR|FATAL|CRITICAL|FAIL|EXCEPTION|Traceback)\b/gi, '<span class="log-error">$&</span>');
+  html = html.replace(/\b(WARNING|WARN)\b/gi, '<span class="log-warn">$&</span>');
+  html = html.replace(/\b(INFO|SUCCESS|OK|READY)\b/gi, '<span class="log-info">$&</span>');
+  html = html.replace(/\b(DEBUG|TRACE)\b/gi, '<span style="color:#6c7a96">$&</span>');
+
+  return html;
 }
 
 function esc(s){const d=document.createElement('span');d.textContent=s;return d.innerHTML}
@@ -1677,19 +1797,63 @@ function showMsg(r){
 }
 
 // ---- SYSTEM ----
+let _vitalsPoll = null;
+
 async function loadSystem(){
   const d=await api('GET','/system');
+  // Build the initial grid with empty progress bars
   document.getElementById('sys-info').innerHTML=`
+    <div class="wp-sys-tile">
+      <div style="display:flex; justify-content:space-between;"><span class="lbl">CPU Usage</span><span class="val" id="vit-cpu-t">--%</span></div>
+      <div class="wp-progress-wrap"><div class="wp-progress-fill" id="vit-cpu-b" style="width:0%"></div></div>
+    </div>
+    <div class="wp-sys-tile">
+      <div style="display:flex; justify-content:space-between;"><span class="lbl">RAM Usage</span><span class="val" id="vit-ram-t">--GB</span></div>
+      <div class="wp-progress-wrap"><div class="wp-progress-fill" id="vit-ram-b" style="width:0%"></div></div>
+    </div>
+    <div class="wp-sys-tile">
+      <div style="display:flex; justify-content:space-between;"><span class="lbl">Disk Usage</span><span class="val" id="vit-disk-t">--GB</span></div>
+      <div class="wp-progress-wrap"><div class="wp-progress-fill" id="vit-disk-b" style="width:0%"></div></div>
+    </div>
     <div class="wp-sys-tile"><div class="lbl">Hostname</div><div class="val">${esc(d.hostname)}</div></div>
     <div class="wp-sys-tile"><div class="lbl">IP Address</div><div class="val">${esc(d.ip)}</div></div>
     <div class="wp-sys-tile"><div class="lbl">Uptime</div><div class="val">${esc(d.uptime)}</div></div>`;
-  document.getElementById('sys-services').innerHTML=d.services.map(s=>
+  
+ document.getElementById('sys-services').innerHTML=d.services.map(s=>
     `<tr>
       <td data-label="Slot" style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(s.slot_id)}</td>
       <td data-label="Status"><span class="wp-pill ${pillClass(s.status)}">${esc(s.status)}</span></td>
     </tr>`
   ).join('')||'<tr><td colspan="2" style="color:#6c7a96;padding:16px 12px">No bot slots found.</td></tr>';
-  document.getElementById('sys-log').textContent=d.log_tail.join('\n');
+  
+  // Format the sys log on load AND force scroll to bottom
+  const sysLogBox = document.getElementById('sys-log');
+  sysLogBox.innerHTML = (d.log_tail||[]).map(formatLogLine).join('\n');
+  sysLogBox.scrollTop = sysLogBox.scrollHeight;
+}
+
+// Function to pull live vitals
+async function pollVitals() {
+  const d = await api('GET', '/system/vitals');
+  if (d.error) return;
+  
+  const updateBar = (id, percent, text) => {
+    const bar = document.getElementById(`vit-${id}-b`);
+    const txt = document.getElementById(`vit-${id}-t`);
+    if (!bar || !txt) return;
+    
+    txt.textContent = text;
+    bar.style.width = percent + '%';
+    
+    // Auto-change colors based on danger!
+    bar.className = 'wp-progress-fill';
+    if (percent > 75) bar.classList.add('warn');
+    if (percent > 90) bar.classList.add('danger');
+  };
+
+  updateBar('cpu', d.cpu, d.cpu + '%');
+  updateBar('ram', d.ram, d.ram_text);
+  updateBar('disk', d.disk, d.disk_text);
 }
 
 async function restartAll(){
@@ -1732,13 +1896,23 @@ async function runUpdate(){
 // ---- BOT LOGS ----
 const _logPolls={};
 
+// Upgraded Refresh Log with Smart Auto-Scroll
 async function refreshLog(sid){
   const box=document.getElementById(`bot-log-box-${sid}`);
   if(!box) return;
+  
+  // Check if the user has manually scrolled up
+  const isAtBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 20;
+
   const d=await api('GET',`/slots/${sid}/logs`);
   const lines=d.lines||[];
-  box.textContent=lines.length?lines.join('\n'):'(no log entries yet)';
-  box.scrollTop=box.scrollHeight;
+  
+  // Apply our color formatting
+  box.innerHTML=lines.length ? lines.map(formatLogLine).join('\n') : '(no log entries yet)';
+  
+  // Smart Scroll: Only force scroll to bottom if they were already at the bottom
+  if (isAtBottom) box.scrollTop = box.scrollHeight;
+  
   const cnt=document.getElementById(`bot-log-count-${sid}`);
   if(cnt) cnt.textContent=`${lines.length} lines`;
 }
@@ -1755,8 +1929,29 @@ function toggleLog(sid,btn){
   }
 }
 
-// Init
+// ---- GLOBAL POLLER (Badges) ----
+async function pollBadges() {
+  const d = await api('GET', '/badges');
+  if (d && !d.error) {
+    const badge = document.getElementById('badge-bots');
+    if (badge) {
+      if (d.failed_bots > 0) {
+        badge.classList.add('active');
+      } else {
+        badge.classList.remove('active');
+      }
+    }
+  }
+}
+
+// Init Boot Sequence
+let _globalPoll = null;
 loadBots();
+if (!_globalPoll) {
+  pollBadges();
+  _globalPoll = setInterval(pollBadges, 5000); // Check every 5 seconds
+}
+
 </script>
 
 <!-- Move / Return Modal -->
