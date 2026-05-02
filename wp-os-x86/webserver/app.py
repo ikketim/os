@@ -208,13 +208,13 @@ def get_discord_bot_name(token: str) -> str:
             return data.get("username", "")
 
     except urllib.error.HTTPError as e:
-        return f"Failed: HTTP {e.code}"
+        return ""
 
     except urllib.error.URLError as e:
-        return f"Failed: Netword/SSL"
+        return ""
 
     except Exception as e:
-        return f"Failed: Unknown Error"
+        return ""
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -948,6 +948,48 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-modal {transform: scale(0.95);opacity: 0;transition: all 0.2s ease;}
 .wp-modal-overlay.active .wp-modal {transform: scale(1);opacity: 1;}
 @keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width: 768px) {
+  .wp-table thead { display: none; }
+  .wp-table tbody { display: block; width: 100%; }
+  
+  /* The Card Wrapper */
+  .wp-table tr { 
+    display: flex; 
+    flex-wrap: wrap; 
+    align-items: center;
+    justify-content: space-between; /* <-- This forces the items to stretch across the width! */
+    gap: 8px 4px; /* Dialed back the gap so space-between does the heavy lifting */
+    margin-bottom: 12px; 
+    background: rgba(0,0,0,.15); 
+    border: 1px solid #1e2a3a; 
+    border-radius: 6px; 
+    padding: 12px 14px;
+  }
+  
+  /* Row 1: The Data (Inline) */
+  .wp-table td { 
+    display: inline-block; 
+    padding: 0; 
+    border: none; 
+  }
+  /* Hide the text labels to eliminate dead space */
+  .wp-table td::before { display: none !important; }
+  
+  /* Row 2: Force ONLY the Actions column to drop to the bottom */
+  .wp-table td[data-label="Actions"] { 
+    width: 100%; 
+    margin-top: 6px; 
+    padding-top: 12px; 
+    border-top: 1px dashed rgba(30,42,58,.5); 
+  }
+  
+  /* Action Button Layout */
+  .wp-table td .wp-btn-row { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+  
+  /* Makes Vault Dropdown full width, and stretches buttons evenly below it */
+  .wp-table td .wp-btn-row .wp-sel-wrap { flex: 1 1 100%; }
+  .wp-table td .wp-btn-row .wp-btn { flex: 1; justify-content: center; }
+}
 </style>
 </head>
 <body>
@@ -1371,11 +1413,11 @@ async function createSlot(){
 async function loadTokens(){
   const d=await api('GET','/tokens');
   document.getElementById('active-tokens-body').innerHTML=d.active.map(t=>`<tr>
-    <td style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(t.slot_id)}</td>
-    <td>${typeTag(t.type)}</td>
-    <td style="color:#aee5ff">${esc(t.label)}</td>
-    <td style="font-family:'Share Tech Mono',monospace;color:${t.has_token?'#00e676':'#6c7a96'}">${esc(t.token_mask)}</td>
-    <td><div class="wp-btn-row" style="gap:6px">
+    <td data-label="Slot" style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(t.slot_id)}</td>
+    <td data-label="Type">${typeTag(t.type)}</td>
+    <td data-label="Label" style="color:#aee5ff">${esc(t.label)}</td>
+    <td data-label="Token" style="font-family:'Share Tech Mono',monospace;color:${t.has_token?'#00e676':'#6c7a96'}">${esc(t.token_mask)}</td>
+    <td data-label="Actions"><div class="wp-btn-row" style="gap:6px">
       <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="setTokenPrompt('${t.slot_id}')">Set Token</button>
       ${t.has_token?`
 <button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="openMoveModal('${t.slot_id}')">MOVE TO...</button>
@@ -1387,7 +1429,27 @@ async function loadTokens(){
   const vbody=document.getElementById('vault-body');
   if(!d.vault.length){
     vbody.innerHTML='<tr><td colspan="4" style="color:#6c7a96;padding:16px 12px">No tokens in vault. Add one above.</td></tr>';
-    return;
+    return `<tr>
+    <td data-label="Token" style="font-family:'Share Tech Mono',monospace;color:#cdd6f4">${esc(v.token_mask)}</td>
+    <td data-label="Note" style="color:#aee5ff">${v.comment ? esc(v.comment) : '&#8212;'}</td>
+    <td data-label="Added" style="color:#6c7a96;font-size:11px">${esc(v.added.slice(0,10))}</td>
+    <td data-label="Actions"><div class="wp-btn-row" style="gap:6px">
+      
+      <!-- NEW CUSTOM DROPDOWN -->
+      <div class="wp-sel-wrap">
+        <div class="wp-sel-box" id="box-menu-${v.token_hash}" onclick="toggleCustomSel('menu-${v.token_hash}', this.id)">Select slot...</div>
+        <div class="wp-sel-menu" id="menu-${v.token_hash}">
+          <div class="wp-sel-item" onclick="pickCustomSel('menu-${v.token_hash}', 'asgn-${v.token_hash}', '', 'Select slot...')">Select slot...</div>
+          ${slotOpts}
+        </div>
+        <input type="hidden" id="asgn-${v.token_hash}" value="">
+      </div>
+      <!-- END CUSTOM DROPDOWN -->
+
+      <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="assignVault('${v.token_hash}')">Assign</button>
+      <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="removeVault('${v.token_hash}')">Remove</button>
+    </div></td>
+  </tr>`;
   }
 
   vbody.innerHTML=d.vault.map(v=>{
@@ -1555,7 +1617,10 @@ async function loadSystem(){
     <div class="wp-sys-tile"><div class="lbl">IP Address</div><div class="val">${esc(d.ip)}</div></div>
     <div class="wp-sys-tile"><div class="lbl">Uptime</div><div class="val">${esc(d.uptime)}</div></div>`;
   document.getElementById('sys-services').innerHTML=d.services.map(s=>
-    `<tr><td style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(s.slot_id)}</td><td><span class="wp-pill ${pillClass(s.status)}">${esc(s.status)}</span></td></tr>`
+    `<tr>
+      <td data-label="Slot" style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(s.slot_id)}</td>
+      <td data-label="Status"><span class="wp-pill ${pillClass(s.status)}">${esc(s.status)}</span></td>
+    </tr>`
   ).join('')||'<tr><td colspan="2" style="color:#6c7a96;padding:16px 12px">No bot slots found.</td></tr>';
   document.getElementById('sys-log').textContent=d.log_tail.join('\n');
 }
