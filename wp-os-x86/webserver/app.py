@@ -12,6 +12,10 @@ import re
 import shutil
 import subprocess
 import threading
+import certifi
+import ssl
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -159,6 +163,8 @@ def list_slots():
     return slots
 
 def get_wos_count(exclude_slot=None):
+    if not BOTS_DIR.exists():
+        return 0
     count = 0
     for d in BOTS_DIR.iterdir():
         if not d.is_dir(): continue
@@ -171,6 +177,8 @@ def get_wos_count(exclude_slot=None):
     return count
 
 def get_type_count(bot_type, exclude_slot=None):
+    if not BOTS_DIR.exists():
+        return 0
     count = 0
     for d in BOTS_DIR.iterdir():
         if not d.is_dir(): continue
@@ -181,6 +189,32 @@ def get_type_count(bot_type, exclude_slot=None):
         if meta.get("type") == bot_type:
             count += 1
     return count
+
+def get_discord_bot_name(token: str) -> str:
+    try:
+	# Force Python to use Mozilla's updated certificates
+        secure_context = ssl.create_default_context(cafile=certifi.where())
+
+        req = urllib.request.Request(
+            "https://discord.com/api/v10/users/@me",
+            headers={
+                "Authorization": f"Bot {token}",
+                "User-Agent": "WP-OS (wp-os, 1.0)"
+            }
+        )
+
+        with urllib.request.urlopen(req, timeout=5,context=secure_context) as res:
+            data = json.loads(res.read().decode())
+            return data.get("username", "")
+
+    except urllib.error.HTTPError as e:
+        return ""
+
+    except urllib.error.URLError as e:
+        return ""
+
+    except Exception as e:
+        return ""
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -252,9 +286,27 @@ def api_slots_remove(slot_id):
     tok = read_token(slot_id)
     if tok:
         with _registry_lock:
+            h = sha256t(tok)
+
+            # Remove from registry
             reg = registry_get()
-            reg["tokens"].pop(sha256t(tok), None)
+            reg["tokens"].pop(h, None)
             registry_save(reg)
+
+            # Add back to vault (avoid duplicates)
+            v = vault_get()
+            exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
+
+            if not exists:
+                bot_name = get_discord_bot_name(tok)
+                comment = bot_name if bot_name else f"Recovered from deleted slot {slot_id}"
+
+                v["tokens"].append({
+                    "token": tok,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                vault_save(v)
 
     for action in ("stop", "disable"):
         r = subprocess.run(["systemctl", action, f"wp-os-bot@{slot_id}"],
@@ -443,10 +495,28 @@ def api_token_set():
         old = read_token(slot_id)
         if old:
             reg["tokens"].pop(sha256t(old), None)
+            # --- VAULT SAFETY ---
+            v = vault_get()
+            if not any(sha256t(e.get("token","")) == sha256t(old) for e in v["tokens"]):
+                bot_name = get_discord_bot_name(old)
+                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Overwritten on {slot_id}"
+                v["tokens"].append({
+                    "token": old,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                vault_save(v)
 
         write_token(slot_id, token)
         reg["tokens"][h] = slot_id
         registry_save(reg)
+        
+        # --- NEW: VAULT DUPLICATE CLEANUP ---
+        # If the newly set token was sitting in the vault, delete it!
+        v = vault_get()
+        v["tokens"] = [e for e in v["tokens"] if sha256t(e.get("token","")) != h]
+        vault_save(v)
+
     svc_run("restart", slot_id)
     return jsonify({"ok": True})
 
@@ -454,16 +524,48 @@ def api_token_set():
 def api_token_clear():
     data = request.json or {}
     slot_id = data.get("slot_id", "").strip()
+    mode = data.get("mode", "delete")  # "vault" or "delete"
+
     if not slot_id:
         return jsonify({"error": "slot_id required"}), 400
+
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    token = read_token(slot_id)
+    if not token:
+        return jsonify({"ok": True})
+
     with _registry_lock:
-        old = read_token(slot_id)
-        if old:
-            reg = registry_get()
-            reg["tokens"].pop(sha256t(old), None)
-            registry_save(reg)
+        h = sha256t(token)
+
+        # Remove from registry
+        reg = registry_get()
+        reg["tokens"].pop(h, None)
+        registry_save(reg)
+
+        # Return to vault if selected
+        if mode == "vault":
+            v = vault_get()
+            exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
+
+            if not exists:
+                bot_name = get_discord_bot_name(token)
+                comment = bot_name if bot_name else f"Returned from {slot_id}"
+
+                v["tokens"].append({
+                    "token": token,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                vault_save(v)
+
+        # Always clear slot
         write_token(slot_id, "")
+
     svc_run("stop", slot_id)
+
     return jsonify({"ok": True})
 
 @app.route("/api/tokens/migrate", methods=["POST"])
@@ -489,11 +591,23 @@ def api_token_migrate():
         dst_old = read_token(dst)
         if dst_old:
             reg["tokens"].pop(sha256t(dst_old), None)
+            # --- VAULT SAFETY ---
+            v = vault_get()
+            if not any(sha256t(e.get("token","")) == sha256t(dst_old) for e in v["tokens"]):
+                bot_name = get_discord_bot_name(dst_old)
+                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Bumped from {dst}"
+                v["tokens"].append({
+                    "token": dst_old,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+                vault_save(v)
 
         write_token(dst, tok)
         reg["tokens"][h] = dst
         write_token(src, "")
         registry_save(reg)
+        
     svc_run("stop", src)
     svc_run("restart", dst)
     return jsonify({"ok": True})
@@ -502,26 +616,40 @@ def api_token_migrate():
 def api_vault_add():
     data = request.json or {}
     token = data.get("token", "").strip()
-    comment = data.get("comment", "").strip()
+    comment = data.get("comment", "").strip()  # <- Explicitly grab the comment from the frontend
+    
+    # Check for the token FIRST before trying to do anything with it
     if not token:
         return jsonify({"error": "token required"}), 400
 
+    # Auto-fill if empty
+    if not comment:
+        bot_name = get_discord_bot_name(token)
+        if bot_name:
+            comment = bot_name
+
     h = sha256t(token)
     reg = registry_get()
-    if h in reg["tokens"]:
+    
+    # Check if token is already in use by an active slot
+    if h in reg.get("tokens", {}):
         return jsonify({"error": f"Token already in use by slot: {reg['tokens'][h]}"}), 400
 
     v = vault_get()
-    for entry in v["tokens"]:
+    
+    # Check if token is already in the vault
+    for entry in v.get("tokens", []):
         if sha256t(entry.get("token", "")) == h:
             return jsonify({"error": "Token already in vault"}), 400
 
+    # Add to vault
     v["tokens"].append({
         "token": token,
         "comment": comment,
         "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
     vault_save(v)
+    
     return jsonify({"ok": True})
 
 @app.route("/api/vault/<token_hash>", methods=["DELETE"])
@@ -563,6 +691,15 @@ def api_vault_assign():
         old = read_token(slot_id)
         if old:
             reg["tokens"].pop(sha256t(old), None)
+            # --- VAULT SAFETY ---
+            if not any(sha256t(e.get("token","")) == sha256t(old) for e in v["tokens"]):
+                bot_name = get_discord_bot_name(old)
+                comment = bot_name if bot_name and not bot_name.startswith("Failed:") else f"Bumped from {slot_id}"
+                v["tokens"].append({
+                    "token": old,
+                    "comment": comment,
+                    "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
 
         write_token(slot_id, token)
         reg["tokens"][h] = slot_id
@@ -574,9 +711,56 @@ def api_vault_assign():
     svc_run("restart", slot_id)
     return jsonify({"ok": True})
 
+@app.route("/api/vault/return", methods=["POST"])
+def api_vault_return():
+    data = request.json or {}
+    slot_id = data.get("slot_id", "").strip()
+
+    if not slot_id:
+        return jsonify({"error": "slot_id required"}), 400
+
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    token = read_token(slot_id)
+    if not token:
+        return jsonify({"error": "No token on this slot"}), 400
+
+    with _registry_lock:
+        reg = registry_get()
+        h = sha256t(token)
+
+        # Remove from registry
+        reg["tokens"].pop(h, None)
+        registry_save(reg)
+
+        # Add back to vault (avoid duplicates)
+        v = vault_get()
+        exists = any(sha256t(e.get("token","")) == h for e in v["tokens"])
+        if not exists:
+            bot_name = get_discord_bot_name(token)
+            comment = bot_name if bot_name else f"Returned from {slot_id}"
+            
+            v["tokens"].append({
+                "token": token,
+                "comment": comment,
+                "added": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            vault_save(v)
+
+        # Clear token from slot
+        write_token(slot_id, "")
+
+    svc_run("stop", slot_id)
+
+    return jsonify({"ok": True})
+
 # ---------------------------------------------------------------------------
 # System API
 # ---------------------------------------------------------------------------
+_cpu_last = (0.0, 0.0) # Tracks (total_time, idle_time) for CPU percentage
+
 @app.route("/api/system", methods=["GET"])
 def api_system():
     import socket
@@ -614,6 +798,65 @@ def api_system():
         "services": services,
         "log_tail": log_lines,
     })
+
+@app.route("/api/system/vitals", methods=["GET"])
+def api_system_vitals():
+    # 1. CPU Calculation (Pure Python, no dependencies)
+    global _cpu_last
+    cpu_percent = 0.0
+    try:
+        with open('/proc/stat') as f:
+            fields = [float(column) for column in f.readline().strip().split()[1:]]
+        idle = fields[3] + fields[4]  # idle + iowait
+        total = sum(fields)
+        idle_delta = idle - _cpu_last[1]
+        total_delta = total - _cpu_last[0]
+        _cpu_last = (total, idle)
+        if total_delta > 0:
+            cpu_percent = 100.0 * (1.0 - idle_delta / total_delta)
+    except: pass
+
+    # 2. RAM Calculation
+    ram_percent, ram_text = 0.0, "Unknown"
+    try:
+        with open('/proc/meminfo') as f:
+            lines = f.readlines()
+        mem_total = mem_avail = 0
+        for line in lines:
+            if line.startswith('MemTotal:'): mem_total = int(line.split()[1])
+            elif line.startswith('MemAvailable:'): mem_avail = int(line.split()[1])
+        if mem_total > 0:
+            mem_used = mem_total - mem_avail
+            ram_percent = (mem_used / mem_total) * 100.0
+            ram_text = f"{mem_used / 1024 / 1024:.1f}GB / {mem_total / 1024 / 1024:.1f}GB"
+    except: pass
+
+    # 3. Disk Calculation
+    disk_percent, disk_text = 0.0, "Unknown"
+    try:
+        total, used, free = shutil.disk_usage("/")
+        if total > 0:
+            disk_percent = (used / total) * 100.0
+            disk_text = f"{used / (1024**3):.1f}GB / {total / (1024**3):.1f}GB"
+    except: pass
+
+    return jsonify({
+        "cpu": round(cpu_percent, 1),
+        "ram": round(ram_percent, 1),
+        "ram_text": ram_text,
+        "disk": round(disk_percent, 1),
+        "disk_text": disk_text
+    })
+
+@app.route("/api/badges", methods=["GET"])
+def api_badges():
+    failed_count = 0
+    if BOTS_DIR.exists():
+        for d in BOTS_DIR.iterdir():
+            if d.is_dir() and (d / ".meta.json").exists():
+                if svc_status(d.name) == "failed":
+                    failed_count += 1
+    return jsonify({"failed_bots": failed_count})
 
 @app.route("/api/system/restart-all", methods=["POST"])
 def api_restart_all():
@@ -711,7 +954,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-token-mask.has-token{color:#00e676}
 .wp-not-installed{background:rgba(255,107,53,.08);border:1px solid rgba(255,107,53,.3);border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:12px;color:#ff9966}
 .wp-not-installed span{flex:1}
-.wp-btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.wp-btn-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px}
 .wp-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 16px;border:none;border-radius:6px;font-family:'Exo 2',sans-serif;font-size:11px;font-weight:600;letter-spacing:1px;cursor:pointer;text-transform:uppercase;transition:.15s}
 .wp-btn-success{background:#00e676;color:#000}
 .wp-btn-success:hover{background:#00d068}
@@ -727,7 +970,18 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-inp{background:rgba(0,0,0,.35);border:1px solid #1e2a3a;border-radius:6px;color:#cdd6f4;padding:8px 12px;font-family:'Share Tech Mono',monospace;font-size:12px;width:100%}
 .wp-inp:focus{outline:none;border-color:#00c8ff}
 .wp-inp::placeholder{color:#3c4e6a}
-select.wp-inp{cursor:pointer}
+/* Custom Dropdown Wrapper */
+.wp-sel-wrap { position: relative; flex: 1; min-width: 140px; max-width: 240px; user-select: none; }
+/* The visible click-box */
+.wp-sel-box { background: rgba(0,0,0,.35); border: 1px solid #1e2a3a; border-radius: 6px; color: #cdd6f4; padding: 6px 32px 6px 12px; font-family: 'Share Tech Mono', monospace; font-size: 12px; cursor: pointer; transition: .15s; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236c7a96' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.wp-sel-box:hover { border-color: #00c8ff; }
+/* The floating menu */
+.wp-sel-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #283d66; border: 1px solid #00c8ff; border-radius: 6px; z-index: 100; display: none; overflow: hidden; box-shadow: 0 8px 16px rgba(0,0,0,.5); }
+.wp-sel-menu.open { display: block; }
+/* The items inside the menu */
+.wp-sel-item { padding: 8px 12px; font-family: 'Share Tech Mono', monospace; font-size: 12px; color: #cdd6f4; cursor: pointer; transition: padding .15s, background .15s, color .15s; border-bottom: 1px solid #1e2a3a; }
+.wp-sel-item:last-child { border-bottom: none; }
+.wp-sel-item:hover { background: rgba(0,200,255,.14); color: #00c8ff; padding-left: 16px; } /* Sleek slide effect */
 .wp-form-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px}
 .wp-form-group{display:flex;flex-direction:column;gap:5px;min-width:140px}
 .wp-form-label{font-size:11px;letter-spacing:2px;color:#6c7a96;text-transform:uppercase}
@@ -757,7 +1011,71 @@ select.wp-inp{cursor:pointer}
 .wp-bot-opt-name{font-size:13px;font-weight:600;color:#cdd6f4}
 .wp-bot-opt-desc{font-size:11px;color:#aee5ff;margin-top:3px}
 .wp-spin{display:inline-block;width:12px;height:12px;border:2px solid #00c8ff;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+.wp-modal-overlay {  position:fixed;inset:0;background: rgba(0,0,0,.6);display: none;align-items: center;justify-content: center;z-index: 999; opacity: 0;transition: opacity 0.2s ease;}
+.wp-modal-overlay.active {display: flex;opacity: 1;}
+.wp-modal {transform: scale(0.95);opacity: 0;transition: all 0.2s ease;}
+.wp-modal-overlay.active .wp-modal {transform: scale(1);opacity: 1;}
 @keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width: 768px) {
+  .wp-table thead { display: none; }
+  .wp-table tbody { display: block; width: 100%; }
+  
+  /* The Card Wrapper */
+  .wp-table tr { 
+    display: flex; 
+    flex-wrap: wrap; 
+    align-items: center;
+    justify-content: space-between; /* <-- This forces the items to stretch across the width! */
+    gap: 8px 4px; /* Dialed back the gap so space-between does the heavy lifting */
+    margin-bottom: 12px; 
+    background: rgba(0,0,0,.15); 
+    border: 1px solid #1e2a3a; 
+    border-radius: 6px; 
+    padding: 12px 14px;
+  }
+  
+  /* Row 1: The Data (Inline) */
+  .wp-table td { 
+    display: inline-block; 
+    padding: 0; 
+    border: none; 
+  }
+  /* Hide the text labels to eliminate dead space */
+  .wp-table td::before { display: none !important; }
+  
+  /* Row 2: Force ONLY the Actions column to drop to the bottom */
+  .wp-table td[data-label="Actions"] { 
+    width: 100%; 
+    margin-top: 6px; 
+    padding-top: 12px; 
+    border-top: 1px dashed rgba(30,42,58,.5); 
+  }
+  
+  /* Action Button Layout */
+  .wp-table td .wp-btn-row { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+  
+  /* Makes Vault Dropdown full width, and stretches buttons evenly below it */
+  .wp-table td .wp-btn-row .wp-sel-wrap { flex: 1 1 100%; }
+  .wp-table td .wp-btn-row .wp-btn { flex: 1; justify-content: center; }
+}
+
+/* Progress Bars */
+.wp-progress-wrap { background: rgba(0,0,0,.3); border-radius: 4px; height: 6px; width: 100%; margin-top: 8px; overflow: hidden; position: relative; }
+.wp-progress-fill { height: 100%; background: #00c8ff; border-radius: 4px; transition: width 0.5s ease, background-color 0.5s ease; }
+.wp-progress-fill.warn { background: #ffea00; }
+.wp-progress-fill.danger { background: #ff1744; }
+
+/* Colorized Logs */
+.log-error { color: #ff5a7a; font-weight: 700; text-shadow: 0 0 8px rgba(255,90,122,.4); }
+.log-warn { color: #ffea00; font-weight: 700; }
+.log-info { color: #00e676; }
+.log-date { color: #6c7a96; user-select: none; }
+.wp-log-box { scroll-behavior: smooth; }
+
+/* Nav Badges */
+.wp-nav-badge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff1744; box-shadow: 0 0 8px #ff1744; vertical-align: middle; margin-left: 6px; opacity: 0; transition: opacity 0.3s ease; }
+.wp-nav-badge.active { opacity: 1; }
+
 </style>
 </head>
 <body>
@@ -774,7 +1092,7 @@ select.wp-inp{cursor:pointer}
 </div>
 
 <nav class="wp-nav">
-  <button class="active" onclick="showTab('bots',this)">⚡ Bots</button>
+  <button class="active" onclick="showTab('bots',this)">⚡ Bots <span id="badge-bots" class="wp-nav-badge"></span></button>
   <button onclick="showTab('tokens',this)">🔑 Tokens</button>
   <button onclick="showTab('system',this)">🖥 System</button>
 </nav>
@@ -898,14 +1216,190 @@ select.wp-inp{cursor:pointer}
 <script>
 let _slots=[], _allSlots=[], _selBotType='wos-py';
 
+// --- CUSTOM PORTAL DROPDOWN ENGINE ---
+
+// Close menus on click-outside
+document.addEventListener('click', (e) => {
+  if(!e.target.closest('.wp-sel-wrap') && !e.target.closest('.wp-sel-menu')) {
+    closeAllMenus();
+  }
+});
+
+// Close menus instantly on any scrolling or resizing
+window.addEventListener('resize', closeAllMenus);
+document.addEventListener('scroll', (e) => {
+  if (!e.target.closest('.wp-sel-menu')) closeAllMenus();
+}, true);
+
+function closeAllMenus() {
+  // Find menus trapped in the body and send them back to their wrappers
+  document.querySelectorAll('body > .wp-sel-menu').forEach(m => {
+    m.classList.remove('open');
+    if (m.originalParent) m.originalParent.appendChild(m);
+  });
+  document.querySelectorAll('.wp-sel-menu').forEach(m => m.classList.remove('open'));
+}
+
+function toggleCustomSel(menuId, boxId) {
+  const menu = document.getElementById(menuId);
+  const box = document.getElementById(boxId);
+  
+  if (menu.classList.contains('open')) {
+    closeAllMenus();
+    return;
+  }
+
+  closeAllMenus();
+
+  // Remember its original home before we portal it
+  if (!menu.originalParent) {
+    menu.originalParent = menu.parentElement;
+  }
+
+  // Portal to body
+  document.body.appendChild(menu);
+  
+  // Calculate exact coordinates
+  const rect = box.getBoundingClientRect();
+  menu.style.position = 'absolute';
+  menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  menu.style.left = (rect.left + window.scrollX) + 'px';
+  menu.style.width = rect.width + 'px';
+  menu.style.margin = '0'; 
+  menu.style.zIndex = '99999'; // Forces it above the modal!
+  
+  menu.classList.add('open');
+}
+
+function pickCustomSel(menuId, inputId, val, text) {
+  document.getElementById('box-' + menuId).textContent = text;
+  document.getElementById(inputId).value = val;
+  closeAllMenus(); 
+}
+
+// --- MODAL CONTROLLERS ---
+function customPrompt(title, message, inputType = 'text') {
+  return new Promise(resolve => {
+    const modal = document.getElementById('custom-prompt-modal');
+    document.getElementById('c-prompt-title').textContent = title;
+    document.getElementById('c-prompt-msg').innerHTML = message;
+    
+    const input = document.getElementById('c-prompt-input');
+    input.type = inputType;
+    input.value = '';
+    
+    modal.classList.add('active');
+    setTimeout(() => input.focus(), 100);
+
+    // Clean up event listeners so we don't cause memory leaks
+    const cleanup = () => { 
+      modal.classList.remove('active'); 
+      modal.removeEventListener('click', overlayClick);
+      document.removeEventListener('keydown', escapeKey);
+    };
+
+    // Helper to close and resolve
+    const resolveWith = (val) => { cleanup(); resolve(val); };
+
+    // The safety nets: Click outside or hit Escape to cancel
+    const overlayClick = (e) => { if (e.target === modal) resolveWith(null); };
+    const escapeKey = (e) => { if (e.key === 'Escape') resolveWith(null); };
+
+    document.getElementById('c-prompt-ok').onclick = () => resolveWith(input.value);
+    document.getElementById('c-prompt-cancel').onclick = () => resolveWith(null);
+    
+    modal.addEventListener('click', overlayClick);
+    document.addEventListener('keydown', escapeKey);
+  });
+}
+
+function customConfirm(title, message, isAlert = false, isDanger = false) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('custom-confirm-modal');
+    document.getElementById('c-confirm-title').textContent = title;
+    document.getElementById('c-confirm-msg').innerHTML = message;
+    document.getElementById('c-confirm-ic').textContent = isAlert ? '?' : '?';
+    
+    modal.classList.add('active');
+
+    const btnOk = document.getElementById('c-confirm-ok');
+    const btnCancel = document.getElementById('c-confirm-cancel');
+
+    btnOk.className = 'wp-btn ' + (isDanger ? 'wp-btn-danger' : 'wp-btn-primary');
+    btnOk.textContent = isAlert ? 'Dismiss' : 'Confirm';
+    btnCancel.style.display = isAlert ? 'none' : 'inline-flex';
+
+    // Clean up event listeners
+    const cleanup = () => { 
+      modal.classList.remove('active'); 
+      modal.removeEventListener('click', overlayClick);
+      document.removeEventListener('keydown', escapeKey);
+    };
+
+    // Helper to close and resolve
+    const resolveWith = (val) => { cleanup(); resolve(val); };
+
+    // The safety nets: Click outside or hit Escape to cancel
+    const overlayClick = (e) => { if (e.target === modal) resolveWith(false); };
+    const escapeKey = (e) => { if (e.key === 'Escape') resolveWith(false); };
+
+    btnOk.onclick = () => resolveWith(true);
+    btnCancel.onclick = () => resolveWith(false);
+    
+    modal.addEventListener('click', overlayClick);
+    document.addEventListener('keydown', escapeKey);
+  });
+}
+
 function showTab(id,btn){
   document.querySelectorAll('.wp-page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.wp-nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   btn.classList.add('active');
+  
+  // Turn off vitals polling if we leave the system tab
+  if(_vitalsPoll) { clearInterval(_vitalsPoll); _vitalsPoll = null; }
+  
   if(id==='bots') loadBots();
   if(id==='tokens') loadTokens();
-  if(id==='system') loadSystem();
+  if(id==='system') {
+    loadSystem();
+    // Start polling CPU/RAM every 2.5 seconds
+    _vitalsPoll = setInterval(pollVitals, 2500); 
+    pollVitals(); 
+  }
+}
+
+// Universal Smart Colorizer Engine
+function formatLogLine(line) {
+  // 1. JSON Log Detection (for Node.js Winston/Pino)
+  const trimmed = line.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const obj = JSON.parse(trimmed);
+      const level = obj.level ? ` [${obj.level.toUpperCase()}]` : '';
+      const msg = obj.message || obj.msg || '';
+      return `<span class="log-date">JSON Log${level}</span> ${esc(msg)}`;
+    } catch(e) {} // Not valid JSON, fall back to standard parsing
+  }
+
+  // 2. Escape HTML to prevent injection
+  let html = esc(line);
+
+  // 3. Universal Timestamps (Catches YYYY-MM-DD or HH:MM:SS anywhere)
+  html = html.replace(/\b(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\b/g, '<span class="log-date">$1</span>');
+  html = html.replace(/\b(\d{2}:\d{2}:\d{2})\b/g, '<span class="log-date">$1</span>');
+
+  // 4. Universal Bracket Tags (Dims things like [INFO] or [Core])
+  html = html.replace(/\[(.*?)\]/g, '<span class="log-date">[$1]</span>');
+
+  // 5. Semantic Log Levels (Case Insensitive)
+  html = html.replace(/\b(ERROR|FATAL|CRITICAL|FAIL|EXCEPTION|Traceback)\b/gi, '<span class="log-error">$&</span>');
+  html = html.replace(/\b(WARNING|WARN)\b/gi, '<span class="log-warn">$&</span>');
+  html = html.replace(/\b(INFO|SUCCESS|OK|READY)\b/gi, '<span class="log-info">$&</span>');
+  html = html.replace(/\b(DEBUG|TRACE)\b/gi, '<span style="color:#6c7a96">$&</span>');
+
+  return html;
 }
 
 function esc(s){const d=document.createElement('span');d.textContent=s;return d.innerHTML}
@@ -927,11 +1421,41 @@ function typeTag(t){
   return map[t]||`<span class="wp-type-tag">${esc(t)}</span>`;
 }
 
-async function api(method,path,body){
+// Global tracker for the last clicked button
+let _lastClickedBtn = null;
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.wp-btn');
+  if (b) _lastClickedBtn = b;
+}, true);
+
+// Upgraded API function with auto-loading states
+async function api(method, path, body){
+  // Grab the button that triggered this (if any) and lock it
+  const btn = _lastClickedBtn;
+  _lastClickedBtn = null; 
+  let oldText = '';
+  
+  if (btn) {
+    btn.disabled = true;
+    oldText = btn.innerHTML;
+    btn.innerHTML = '<span class="wp-spin" style="width:10px;height:10px;margin-right:6px"></span> Wait...';
+  }
+
   const opts={method,headers:{'Content-Type':'application/json'}};
   if(body) opts.body=JSON.stringify(body);
-  const r=await fetch('/api'+path,opts);
-  return r.json();
+  
+  try {
+    const r=await fetch('/api'+path,opts);
+    return await r.json();
+  } catch(e) {
+    return {error: 'Network connection failed.'};
+  } finally {
+    // Always unlock the button when finished, even if it errors
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = oldText;
+    }
+  }
 }
 
 // ---- BOTS ----
@@ -1035,9 +1559,10 @@ function pollInstallLog(sid){
 }
 
 async function removeSlot(sid){
-  if(!confirm(`Remove slot "${sid}"?\n\nThis permanently deletes all bot files. The bot will be stopped.`)) return;
-  const r=await api('DELETE',`/slots/${sid}`);
-  if(r.error) alert(r.error); else loadBots();
+  const ok = await customConfirm('Remove Slot', `Are you sure you want to remove <strong style="color:#00c8ff">${esc(sid)}</strong>?<br><br><span style="color:#ff5a7a">This permanently deletes all bot files.</span>`, false, true);
+  if(!ok) return;
+  const r = await api('DELETE',`/slots/${sid}`);
+  if(r.error) await customConfirm('Error', r.error, true); else loadBots();
 }
 
 function pickBotType(type,el){
@@ -1075,55 +1600,168 @@ async function createSlot(){
 async function loadTokens(){
   const d=await api('GET','/tokens');
   document.getElementById('active-tokens-body').innerHTML=d.active.map(t=>`<tr>
-    <td style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(t.slot_id)}</td>
-    <td>${typeTag(t.type)}</td>
-    <td style="color:#aee5ff">${esc(t.label)}</td>
-    <td style="font-family:'Share Tech Mono',monospace;color:${t.has_token?'#00e676':'#6c7a96'}">${esc(t.token_mask)}</td>
-    <td><div class="wp-btn-row" style="gap:6px">
+    <td data-label="Slot" style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(t.slot_id)}</td>
+    <td data-label="Type">${typeTag(t.type)}</td>
+    <td data-label="Label" style="color:#aee5ff">${esc(t.label)}</td>
+    <td data-label="Token" style="font-family:'Share Tech Mono',monospace;color:${t.has_token?'#00e676':'#6c7a96'}">${esc(t.token_mask)}</td>
+    <td data-label="Actions"><div class="wp-btn-row" style="gap:6px">
       <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="setTokenPrompt('${t.slot_id}')">Set Token</button>
-      ${t.has_token?`<button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="migratePrompt('${t.slot_id}')">Move to&hellip;</button>
-      <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="clearToken('${t.slot_id}')">Clear</button>`:''}
+      ${t.has_token?`
+<button class="wp-btn wp-btn-ghost" style="font-size:10px;padding:4px 10px" onclick="openMoveModal('${t.slot_id}')">MOVE TO...</button>
+<button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="openDeleteModal('${t.slot_id}')">DELETE</button>
+`:''}
     </div></td>
   </tr>`).join('');
+
   const vbody=document.getElementById('vault-body');
   if(!d.vault.length){
     vbody.innerHTML='<tr><td colspan="4" style="color:#6c7a96;padding:16px 12px">No tokens in vault. Add one above.</td></tr>';
-    return;
-  }
-  const slotOpts=d.active.map(s=>`<option value="${esc(s.slot_id)}">${esc(s.slot_id)} (${esc(s.type)})</option>`).join('');
-  vbody.innerHTML=d.vault.map(v=>`<tr>
-    <td style="font-family:'Share Tech Mono',monospace;color:#cdd6f4">${esc(v.token_mask)}</td>
-    <td style="color:#aee5ff">${esc(v.comment||'&#8212;')}</td>
-    <td style="color:#6c7a96;font-size:11px">${esc(v.added.slice(0,10))}</td>
-    <td><div class="wp-btn-row" style="gap:6px">
-      <select class="wp-inp" id="asgn-${v.token_hash}" style="min-width:130px;padding:4px 8px"><option value="">Select slot&hellip;</option>${slotOpts}</select>
+    return `<tr>
+    <td data-label="Token" style="font-family:'Share Tech Mono',monospace;color:#cdd6f4">${esc(v.token_mask)}</td>
+    <td data-label="Note" style="color:#aee5ff">${v.comment ? esc(v.comment) : '&#8212;'}</td>
+    <td data-label="Added" style="color:#6c7a96;font-size:11px">${esc(v.added.slice(0,10))}</td>
+    <td data-label="Actions"><div class="wp-btn-row" style="gap:6px">
+      
+      <!-- NEW CUSTOM DROPDOWN -->
+      <div class="wp-sel-wrap">
+        <div class="wp-sel-box" id="box-menu-${v.token_hash}" onclick="toggleCustomSel('menu-${v.token_hash}', this.id)">Select slot...</div>
+        <div class="wp-sel-menu" id="menu-${v.token_hash}">
+          <div class="wp-sel-item" onclick="pickCustomSel('menu-${v.token_hash}', 'asgn-${v.token_hash}', '', 'Select slot...')">Select slot...</div>
+          ${slotOpts}
+        </div>
+        <input type="hidden" id="asgn-${v.token_hash}" value="">
+      </div>
+      <!-- END CUSTOM DROPDOWN -->
+
       <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="assignVault('${v.token_hash}')">Assign</button>
       <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="removeVault('${v.token_hash}')">Remove</button>
     </div></td>
-  </tr>`).join('');
+  </tr>`;
+  }
+
+  vbody.innerHTML=d.vault.map(v=>{
+    
+    // Generating options INSIDE the loop so it knows the correct token_hash!
+    const slotOpts = d.active.map(s => 
+      `<div class="wp-sel-item" onclick="pickCustomSel('menu-${v.token_hash}', 'asgn-${v.token_hash}', '${esc(s.slot_id)}', '${esc(s.slot_id)} (${esc(s.type)})')">${esc(s.slot_id)} (${esc(s.type)})</div>`
+    ).join('');
+
+    return `<tr>
+    <td style="font-family:'Share Tech Mono',monospace;color:#cdd6f4">${esc(v.token_mask)}</td>
+    <td style="color:#aee5ff">${v.comment ? esc(v.comment) : '&#8212;'}</td>
+    <td style="color:#6c7a96;font-size:11px">${esc(v.added.slice(0,10))}</td>
+    <td><div class="wp-btn-row" style="gap:6px">
+      
+      <!-- NEW CUSTOM DROPDOWN -->
+      <div class="wp-sel-wrap">
+        <div class="wp-sel-box" id="box-menu-${v.token_hash}" onclick="toggleCustomSel('menu-${v.token_hash}', this.id)">Select slot...</div>
+        <div class="wp-sel-menu" id="menu-${v.token_hash}">
+          <div class="wp-sel-item" onclick="pickCustomSel('menu-${v.token_hash}', 'asgn-${v.token_hash}', '', 'Select slot...')">Select slot...</div>
+          ${slotOpts}
+        </div>
+        <input type="hidden" id="asgn-${v.token_hash}" value="">
+      </div>
+      <!-- END CUSTOM DROPDOWN -->
+
+      <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="assignVault('${v.token_hash}')">Assign</button>
+      <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="removeVault('${v.token_hash}')">Remove</button>
+    </div></td>
+  </tr>`;
+  }).join('');
 }
 
 async function setTokenPrompt(sid){
-  const tok=prompt(`Enter new Discord bot token for slot "${sid}":`);
+  const tok = await customPrompt('Set Token', `Enter new Discord bot token for slot <strong style="color:#00c8ff">${esc(sid)}</strong>:`, 'password');
   if(!tok) return;
-  const r=await api('POST','/tokens/set',{slot_id:sid,token:tok.trim()});
-  showMsg(r);loadTokens();
+  const r = await api('POST','/tokens/set',{slot_id:sid, token:tok.trim()});
+  showMsg(r); loadTokens();
 }
 
-async function clearToken(sid){
-  if(!confirm(`Clear token for "${sid}"? The bot will stop.`)) return;
-  const r=await api('POST','/tokens/clear',{slot_id:sid});
-  showMsg(r);loadTokens();
+let _activeSlotId = null;
+
+// --- MOVE / RETURN MODAL ---
+function openMoveModal(slot_id) {
+  _activeSlotId = slot_id;
+  const slots = _allSlots.filter(s => s.slot_id !== slot_id);
+  
+  const selHTML = slots.length 
+    ? slots.map(s => `<div class="wp-sel-item" onclick="pickCustomSel('menu-move', 'move-dest-slot', '${esc(s.slot_id)}', '${esc(s.slot_id)} (${esc(s.type)})')">${esc(s.slot_id)} (${esc(s.type)})</div>`).join('')
+    : `<div class="wp-sel-item" onclick="pickCustomSel('menu-move', 'move-dest-slot', '', '-- No other slots available --')">-- No other slots available --</div>`;
+    
+  document.getElementById('move-custom-inject').innerHTML = `
+    <div class="wp-sel-wrap">
+      <div class="wp-sel-box" id="box-menu-move" onclick="toggleCustomSel('menu-move', this.id)">Select destination...</div>
+      <div class="wp-sel-menu" id="menu-move">
+        ${selHTML}
+      </div>
+      <input type="hidden" id="move-dest-slot" value="">
+    </div>
+  `;
+    
+  document.getElementById('move-modal').classList.add('active');
 }
 
-async function migratePrompt(src){
-  const slots=_allSlots.filter(s=>s.slot_id!==src);
-  if(!slots.length){alert('No other slots to migrate to.');return;}
-  const dst=prompt(`Move token from "${src}" to which slot?\n\nAvailable: ${slots.map(s=>s.slot_id).join(', ')}`);
-  if(!dst) return;
-  const r=await api('POST','/tokens/migrate',{from_slot:src,to_slot:dst.trim()});
-  showMsg(r);loadTokens();
+function closeMoveModal() {
+  document.getElementById('move-modal').classList.remove('active');
+  _activeSlotId = null;
 }
+
+async function confirmMove() {
+  if (!_activeSlotId) return;
+  const dst = document.getElementById('move-dest-slot').value;
+  if (!dst) { await customConfirm('Notice', 'No destination slot selected.', true); return; }
+  
+  const r = await api('POST', '/tokens/migrate', {from_slot: _activeSlotId, to_slot: dst});
+  closeMoveModal();
+  showMsg(r);
+  loadTokens();
+}
+
+async function confirmReturn() {
+  if (!_activeSlotId) return;
+  const r = await api('POST', '/vault/return', {slot_id: _activeSlotId});
+  closeMoveModal();
+  showMsg(r);
+  loadTokens();
+}
+
+// --- DELETE MODAL ---
+function openDeleteModal(slot_id) {
+  _activeSlotId = slot_id;
+  document.getElementById('delete-modal').classList.add('active');
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.remove('active');
+  _activeSlotId = null;
+}
+
+async function confirmDelete() {
+  if (!_activeSlotId) return;
+  const r = await api('POST', '/tokens/clear', { slot_id: _activeSlotId, mode: 'delete' });
+  closeDeleteModal();
+  showMsg(r);
+  loadTokens();
+}
+
+// --- GLOBAL MODAL EVENTS ---
+window.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.wp-modal-overlay').forEach(modal => {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        closeMoveModal();
+        closeDeleteModal();
+      }
+    });
+  });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeMoveModal();
+    closeDeleteModal();
+  }
+});
 
 async function vaultAdd(){
   const token=(document.getElementById('vault-token').value||'').trim();
@@ -1137,17 +1775,18 @@ async function vaultAdd(){
 }
 
 async function removeVault(h){
-  if(!confirm('Remove this token from vault?')) return;
-  const r=await api('DELETE',`/vault/${h}`);
-  showMsg(r);loadTokens();
+  const ok = await customConfirm('Remove Token', 'Are you sure you want to remove this token from the vault?', false, true);
+  if(!ok) return;
+  const r = await api('DELETE',`/vault/${h}`);
+  showMsg(r); loadTokens();
 }
 
 async function assignVault(h){
-  const sel=document.getElementById(`asgn-${h}`);
-  const sid=sel?sel.value:'';
-  if(!sid){alert('Select a slot first.');return;}
-  const r=await api('POST','/vault/assign',{token_hash:h,slot_id:sid});
-  showMsg(r);loadTokens();
+  const sel = document.getElementById(`asgn-${h}`);
+  const sid = sel ? sel.value : '';
+  if(!sid){ await customConfirm('Notice', 'Please select a destination slot first.', true); return; }
+  const r = await api('POST','/vault/assign',{token_hash:h, slot_id:sid});
+  showMsg(r); loadTokens();
 }
 
 function showMsg(r){
@@ -1158,22 +1797,70 @@ function showMsg(r){
 }
 
 // ---- SYSTEM ----
+let _vitalsPoll = null;
+
 async function loadSystem(){
   const d=await api('GET','/system');
+  // Build the initial grid with empty progress bars
   document.getElementById('sys-info').innerHTML=`
+    <div class="wp-sys-tile">
+      <div style="display:flex; justify-content:space-between;"><span class="lbl">CPU Usage</span><span class="val" id="vit-cpu-t">--%</span></div>
+      <div class="wp-progress-wrap"><div class="wp-progress-fill" id="vit-cpu-b" style="width:0%"></div></div>
+    </div>
+    <div class="wp-sys-tile">
+      <div style="display:flex; justify-content:space-between;"><span class="lbl">RAM Usage</span><span class="val" id="vit-ram-t">--GB</span></div>
+      <div class="wp-progress-wrap"><div class="wp-progress-fill" id="vit-ram-b" style="width:0%"></div></div>
+    </div>
+    <div class="wp-sys-tile">
+      <div style="display:flex; justify-content:space-between;"><span class="lbl">Disk Usage</span><span class="val" id="vit-disk-t">--GB</span></div>
+      <div class="wp-progress-wrap"><div class="wp-progress-fill" id="vit-disk-b" style="width:0%"></div></div>
+    </div>
     <div class="wp-sys-tile"><div class="lbl">Hostname</div><div class="val">${esc(d.hostname)}</div></div>
     <div class="wp-sys-tile"><div class="lbl">IP Address</div><div class="val">${esc(d.ip)}</div></div>
     <div class="wp-sys-tile"><div class="lbl">Uptime</div><div class="val">${esc(d.uptime)}</div></div>`;
-  document.getElementById('sys-services').innerHTML=d.services.map(s=>
-    `<tr><td style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(s.slot_id)}</td><td><span class="wp-pill ${pillClass(s.status)}">${esc(s.status)}</span></td></tr>`
+  
+ document.getElementById('sys-services').innerHTML=d.services.map(s=>
+    `<tr>
+      <td data-label="Slot" style="font-family:'Share Tech Mono',monospace;color:#00c8ff">${esc(s.slot_id)}</td>
+      <td data-label="Status"><span class="wp-pill ${pillClass(s.status)}">${esc(s.status)}</span></td>
+    </tr>`
   ).join('')||'<tr><td colspan="2" style="color:#6c7a96;padding:16px 12px">No bot slots found.</td></tr>';
-  document.getElementById('sys-log').textContent=d.log_tail.join('\n');
+  
+  // Format the sys log on load AND force scroll to bottom
+  const sysLogBox = document.getElementById('sys-log');
+  sysLogBox.innerHTML = (d.log_tail||[]).map(formatLogLine).join('\n');
+  sysLogBox.scrollTop = sysLogBox.scrollHeight;
+}
+
+// Function to pull live vitals
+async function pollVitals() {
+  const d = await api('GET', '/system/vitals');
+  if (d.error) return;
+  
+  const updateBar = (id, percent, text) => {
+    const bar = document.getElementById(`vit-${id}-b`);
+    const txt = document.getElementById(`vit-${id}-t`);
+    if (!bar || !txt) return;
+    
+    txt.textContent = text;
+    bar.style.width = percent + '%';
+    
+    // Auto-change colors based on danger!
+    bar.className = 'wp-progress-fill';
+    if (percent > 75) bar.classList.add('warn');
+    if (percent > 90) bar.classList.add('danger');
+  };
+
+  updateBar('cpu', d.cpu, d.cpu + '%');
+  updateBar('ram', d.ram, d.ram_text);
+  updateBar('disk', d.disk, d.disk_text);
 }
 
 async function restartAll(){
-  if(!confirm('Restart all running bots?')) return;
-  const r=await api('POST','/system/restart-all');
-  alert(`Restarted: ${(r.restarted||[]).join(', ')||'none'}`);
+  const ok = await customConfirm('Restart All', 'Are you sure you want to restart all running bots?', false, false);
+  if(!ok) return;
+  const r = await api('POST','/system/restart-all');
+  await customConfirm('Success', `Restarted: <br><strong style="color:#00e676">${(r.restarted||[]).join(', ') || 'none'}</strong>`, true);
   loadSystem();
 }
 
@@ -1209,13 +1896,23 @@ async function runUpdate(){
 // ---- BOT LOGS ----
 const _logPolls={};
 
+// Upgraded Refresh Log with Smart Auto-Scroll
 async function refreshLog(sid){
   const box=document.getElementById(`bot-log-box-${sid}`);
   if(!box) return;
+  
+  // Check if the user has manually scrolled up
+  const isAtBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 20;
+
   const d=await api('GET',`/slots/${sid}/logs`);
   const lines=d.lines||[];
-  box.textContent=lines.length?lines.join('\n'):'(no log entries yet)';
-  box.scrollTop=box.scrollHeight;
+  
+  // Apply our color formatting
+  box.innerHTML=lines.length ? lines.map(formatLogLine).join('\n') : '(no log entries yet)';
+  
+  // Smart Scroll: Only force scroll to bottom if they were already at the bottom
+  if (isAtBottom) box.scrollTop = box.scrollHeight;
+  
   const cnt=document.getElementById(`bot-log-count-${sid}`);
   if(cnt) cnt.textContent=`${lines.length} lines`;
 }
@@ -1232,9 +1929,118 @@ function toggleLog(sid,btn){
   }
 }
 
-// Init
+// ---- GLOBAL POLLER (Badges) ----
+async function pollBadges() {
+  const d = await api('GET', '/badges');
+  if (d && !d.error) {
+    const badge = document.getElementById('badge-bots');
+    if (badge) {
+      if (d.failed_bots > 0) {
+        badge.classList.add('active');
+      } else {
+        badge.classList.remove('active');
+      }
+    }
+  }
+}
+
+// Init Boot Sequence
+let _globalPoll = null;
 loadBots();
+if (!_globalPoll) {
+  pollBadges();
+  _globalPoll = setInterval(pollBadges, 5000); // Check every 5 seconds
+}
+
 </script>
+
+<!-- Move / Return Modal -->
+<div id="move-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 300px;">
+      <div class="wp-card-title">
+        <span class="wp-ic">➡</span> Move Token
+      </div>
+
+      <div style="font-size:13px;color:#aee5ff;margin-bottom:16px">
+        Where would you like to move this token?
+      </div>
+
+      <div class="wp-form-group" style="margin-bottom: 20px;">
+        <span class="wp-form-label">Destination Slot</span>
+        <div id="move-custom-inject"></div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="wp-btn wp-btn-primary" onclick="confirmMove()">
+          ➡ Move to Slot
+        </button>
+        <div style="text-align:center;color:#6c7a96;font-size:11px;margin:2px 0;">OR</div>
+        <button class="wp-btn wp-btn-warn" onclick="confirmReturn()">
+          ↩ Return to Vault
+        </button>
+        <button class="wp-btn wp-btn-ghost" onclick="closeMoveModal()" style="margin-top:4px;">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Modal -->
+<div id="delete-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 300px;">
+      <div class="wp-card-title">
+        <span class="wp-ic">⚠</span> Delete Token
+      </div>
+
+      <div style="font-size:13px;color:#aee5ff;margin-bottom:16px">
+        Are you sure you want to permanently delete this token from the slot?<br><br>
+        <strong style="color:#ff5a7a">It will NOT be returned to the vault.</strong>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="wp-btn wp-btn-danger" onclick="confirmDelete()">
+          ✖ Delete Anyways
+        </button>
+        <button class="wp-btn wp-btn-ghost" onclick="closeDeleteModal()">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Input Modal -->
+<div id="custom-prompt-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 320px;">
+      <div class="wp-card-title"><span class="wp-ic">💬</span> <span id="c-prompt-title">Input</span></div>
+      <div id="c-prompt-msg" style="font-size:13px;color:#aee5ff;margin-bottom:16px"></div>
+      <input class="wp-inp" id="c-prompt-input" style="margin-bottom:16px;">
+      <div class="wp-btn-row">
+        <button class="wp-btn wp-btn-primary" id="c-prompt-ok">Submit</button>
+        <button class="wp-btn wp-btn-ghost" id="c-prompt-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Confirm/Alert Modal -->
+<div id="custom-confirm-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 320px;">
+      <div class="wp-card-title"><span class="wp-ic" id="c-confirm-ic">⚠</span> <span id="c-confirm-title">Confirm</span></div>
+      <div id="c-confirm-msg" style="font-size:13px;color:#aee5ff;margin-bottom:20px;line-height:1.5;"></div>
+      <div class="wp-btn-row">
+        <button class="wp-btn wp-btn-primary" id="c-confirm-ok">Confirm</button>
+        <button class="wp-btn wp-btn-ghost" id="c-confirm-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>"""
 
