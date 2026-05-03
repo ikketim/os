@@ -60,8 +60,8 @@ case "$BOT_TYPE" in
     fi
     # Write config.json at repo root (required by wos-voicechat-counter)
     jq -n --arg token "$TOKEN" --arg clientId "$CLIENT_ID" --arg guildId "$GUILD_ID" \
-      '{"token":$token,"clientId":$clientId,"guildId":$guildId}' > "${APP_DIR}/config.json"
-    chmod 600 "${APP_DIR}/config.json"
+      '{"token":$token,"clientId":$clientId,"guildId":$guildId}' > "${APP_DIR}/config/config.json"
+    chmod 600 "${APP_DIR}/config/config.json"
     exec npm start
     ;;
 
