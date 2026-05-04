@@ -25,7 +25,7 @@ from flask import Flask, jsonify, request
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-PANEL_VERSION = "v0.0.10"
+PANEL_VERSION = "v0.0.9"
 _latest_version = None       # Cache for the latest version
 _last_version_check = 0      # Timestamp of the last GitHub ping
 
