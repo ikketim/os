@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================
 # WhiteoutProjectOS -- System Updater (Releases Edition)
-# Downloads the latest release of OS scripts and the web
-# control panel from the source repository.
+# Downloads the latest versions of OS scripts and the web
+# control panel from the source repository's latest release.
 # ============================================================
 set -euo pipefail
 
@@ -17,7 +17,7 @@ error() { echo -e "${RED}[ERR]${NC}    $*"; exit 1; }
 [ -z "${OS_PLATFORM:-}"  ] && error "OS_PLATFORM not set in /etc/wp-os/config.env"
 [ -z "${WEBSERVER_DIR:-}"] && error "WEBSERVER_DIR not set in /etc/wp-os/config.env"
 
-# Fallback to ikketim/os if it's not in the config yet
+# Fallback to ikketim/os if it's missing from the config
 REPO="${GITHUB_REPO:-ikketim/os}"
 
 case "$OS_PLATFORM" in
@@ -45,8 +45,9 @@ fi
 
 info "Latest release found: ${LATEST_TAG}"
 
-# Dynamically build the URLs pointing to the specific release tag instead of 'main'
+# Dynamically construct URLs based on the Pi/x86 platform and the newest Release Tag
 SCRIPTS_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/wp-os-${OS_PLATFORM}/rootfs-overlay/usr/local/bin"
+# app.py is shared between rpi and x86 -- always fetch from wp-os-x86
 WEBSERVER_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/wp-os-x86/webserver"
 
 echo "========================================"
