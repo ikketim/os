@@ -861,24 +861,25 @@ def api_system_version():
     global _latest_version, _last_version_check
     now = time.time()
     
-    # Only ping GitHub once every hour (3600 seconds)
+    # Check once per hour
     if now - _last_version_check > 3600:
-        repo_base = CFG.get("REPO_BASE", "")
-        if repo_base:
-            # Added a cache-buster (?t=...) so GitHub bypasses its 5-minute CDN cache
-            url = f"{repo_base}/wp-os-x86/webserver/app.py?t={int(now)}"
-            try:
-                # Removed the Range header to prevent GitHub CDN rejection
-                req = urllib.request.Request(url, headers={"User-Agent": "WP-OS"})
-                secure_context = ssl.create_default_context(cafile=certifi.where())
-                with urllib.request.urlopen(req, timeout=5, context=secure_context) as res:
-                    content = res.read().decode('utf-8')
-                    match = re.search(r'PANEL_VERSION\s*=\s*"([^"]+)"', content)
-                    if match:
-                        _latest_version = match.group(1)
-            except Exception as e:
-                # Now it will print the error to your logs if it fails!
-                logging.warning(f"Version check failed: {e}") 
+        repo = CFG.get("GITHUB_REPO", "TrelosLeras/os")
+        # Pointing to the official GitHub API for latest release
+        url = f"https://api.github.com/repos/{repo}/releases/latest?t={int(now)}"
+        
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "WP-OS",
+                "Accept": "application/vnd.github.v3+json"
+            })
+            secure_context = ssl.create_default_context(cafile=certifi.where())
+            with urllib.request.urlopen(req, timeout=5, context=secure_context) as res:
+                data = json.loads(res.read().decode('utf-8'))
+                # The API returns a JSON object. We just grab the "tag_name" (e.g. "v0.0.8")
+                if "tag_name" in data:
+                    _latest_version = data["tag_name"]
+        except Exception as e:
+            logging.warning(f"Release version check failed: {e}") 
         
         _last_version_check = now
 
@@ -886,6 +887,7 @@ def api_system_version():
         "version": PANEL_VERSION,
         "latest": _latest_version or PANEL_VERSION
     })
+	
 @app.route("/api/badges", methods=["GET"])
 def api_badges():
     failed_count = 0
