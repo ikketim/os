@@ -12,6 +12,8 @@ OS_HOSTNAME="wp-os-server"
 # -- Source repository ---------------------------------------
 REPO_BASE="https://raw.githubusercontent.com/ikketim/os/main"
 
+GITHUB_REPO="TrelosLeras/os"
+
 # -- Bot repositories ----------------------------------------
 # WOS Python bot
 BOT_MAIN_PY="https://raw.githubusercontent.com/whiteout-project/bot/main/main.py"
