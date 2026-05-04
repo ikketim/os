@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================
-# WhiteoutProjectOS -- System Updater
+# WhiteoutProjectOS -- System Updater (Releases Edition)
 # Downloads the latest versions of OS scripts and the web
-# control panel from the source repository.
-# Sources /etc/wp-os/config.env -- no build-time placeholders.
-#
-# Usage (on the device, as root):
-#   sudo wp-os-update.sh
+# control panel from the source repository's latest release.
 # ============================================================
 set -euo pipefail
 
@@ -18,25 +14,49 @@ warn()  { echo -e "${YELLOW}[WARN]${NC}   $*"; }
 error() { echo -e "${RED}[ERR]${NC}    $*"; exit 1; }
 
 [ "$EUID" -eq 0 ] || error "Run as root: sudo wp-os-update.sh"
-[ -z "${REPO_BASE:-}"    ] && error "REPO_BASE not set in /etc/wp-os/config.env"
 [ -z "${OS_PLATFORM:-}"  ] && error "OS_PLATFORM not set in /etc/wp-os/config.env"
 [ -z "${WEBSERVER_DIR:-}"] && error "WEBSERVER_DIR not set in /etc/wp-os/config.env"
+
+# Fallback to ikketim/os if it's missing from the config
+REPO="${GITHUB_REPO:-ikketim/os}"
 
 case "$OS_PLATFORM" in
   rpi|x86) ;;
   *) error "OS_PLATFORM must be 'rpi' or 'x86', got: ${OS_PLATFORM}" ;;
 esac
 
-SCRIPTS_URL="${REPO_BASE}/wp-os-${OS_PLATFORM}/rootfs-overlay/usr/local/bin"
+info "Checking GitHub API for latest release..."
+
+# Use Python's native JSON parser to safely extract exactly the tag_name
+LATEST_TAG=$(python3 -c "
+import urllib.request, json
+try:
+    req = urllib.request.Request('https://api.github.com/repos/${REPO}/releases/latest', headers={'User-Agent': 'WP-OS', 'Accept': 'application/vnd.github.v3+json'})
+    with urllib.request.urlopen(req, timeout=10) as res:
+        data = json.loads(res.read().decode())
+        print(data.get('tag_name', ''))
+except Exception:
+    pass
+")
+
+if [ -z "$LATEST_TAG" ]; then
+    error "Failed to fetch latest release tag from GitHub API. Rate limit or network issue."
+fi
+
+info "Latest release found: ${LATEST_TAG}"
+
+# Dynamically construct URLs based on the Pi/x86 platform and the newest Release Tag
+SCRIPTS_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/wp-os-${OS_PLATFORM}/rootfs-overlay/usr/local/bin"
 # app.py is shared between rpi and x86 -- always fetch from wp-os-x86
-WEBSERVER_URL="${REPO_BASE}/wp-os-x86/webserver"
+WEBSERVER_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/wp-os-x86/webserver"
 
 echo "========================================"
 echo " WhiteoutProjectOS System Update"
 echo " $(date)"
 echo "========================================"
-echo " Source  : ${REPO_BASE}"
-echo " Platform: ${OS_PLATFORM}"
+echo " Repository : ${REPO}"
+echo " Release Tag: ${LATEST_TAG}"
+echo " Platform   : ${OS_PLATFORM}"
 echo "========================================"
 
 UPDATED=0
