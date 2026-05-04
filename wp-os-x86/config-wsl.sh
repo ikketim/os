@@ -10,7 +10,7 @@ OS_PASSWORD="wpusr"
 OS_HOSTNAME="wp-os-server"
 
 # -- Source repository ---------------------------------------
-REPO_BASE="https://raw.githubusercontent.com/ikketim/os/main"
+GITHUB_REPO="ikketim/os"
 
 # -- Bot repositories ----------------------------------------
 # WOS Python bot
