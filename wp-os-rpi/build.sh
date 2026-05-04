@@ -119,7 +119,7 @@ inject_files() {
     -e "s|@@BOTS_DIR@@|${BOTS_DIR}|g" \
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
-    -e "s|@@REPO_BASE@@|${REPO_BASE}|g" \
+    -e "s|@@GITHUB_REPO@@|${GITHUB_REPO}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-firstboot.sh" \
     > "$FB_TMP"
   install -m 0755 "$FB_TMP" "${MOUNT_DIR}/usr/local/bin/wp-os-firstboot.sh"
