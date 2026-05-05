@@ -14,12 +14,28 @@ import subprocess
 import threading
 import certifi
 import ssl
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, request
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+PANEL_VERSION = "v0.0.9"
+_latest_version = None       # Cache for the latest version
+_last_version_check = 0      # Timestamp of the last GitHub ping
+
+# ---------------------------------------------------------------------------
+# Developer Flags
+# ---------------------------------------------------------------------------
+# Set to False to bypass the disk cache and force a check on reboot.
+# When True (Production Default), version checks survive reboots.
+VERSION_PERSISTENT_CACHE = True  
+VERSION_CACHE_FILE = "/var/cache/wp-os/version_cache.json"
 
 # ---------------------------------------------------------------------------
 # Config
@@ -848,6 +864,61 @@ def api_system_vitals():
         "disk_text": disk_text
     })
 
+@app.route("/api/system/version", methods=["GET"])
+def api_system_version():
+    global _latest_version, _last_version_check
+    now = time.time()
+
+    # --- 1. RECOVERY PHASE ---
+    if VERSION_PERSISTENT_CACHE and _last_version_check == 0:
+        if os.path.exists(VERSION_CACHE_FILE):
+            try:
+                with open(VERSION_CACHE_FILE, "r") as f:
+                    cache_data = json.load(f)
+                _latest_version = cache_data.get("latest_version")
+                _last_version_check = cache_data.get("last_check", 0)
+            except Exception as e:
+                logging.warning(f"Failed to read version cache: {e}")
+
+    # --- 2. API CHECK PHASE (Checks if 1 hour has passed) ---
+    if now - _last_version_check > 3600:
+        repo = CFG.get("GITHUB_REPO", "ikketim/os")
+        url = f"https://api.github.com/repos/{repo}/releases/latest?t={int(now)}"
+        
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "WP-OS",
+                "Accept": "application/vnd.github.v3+json"
+            })
+            secure_context = ssl.create_default_context(cafile=certifi.where())
+            with urllib.request.urlopen(req, timeout=5, context=secure_context) as res:
+                data = json.loads(res.read().decode('utf-8'))
+                if "tag_name" in data:
+                    _latest_version = data["tag_name"]
+        except Exception as e:
+            logging.warning(f"Release version check failed: {e}") 
+        
+        _last_version_check = now
+
+        # --- 3. SAVE PHASE ---
+        if VERSION_PERSISTENT_CACHE:
+            try:
+                # Ensure the directory (/var/cache/wp-os) exists before writing
+                os.makedirs(os.path.dirname(VERSION_CACHE_FILE), exist_ok=True)
+                
+                with open(VERSION_CACHE_FILE, "w") as f:
+                    json.dump({
+                        "latest_version": _latest_version,
+                        "last_check": _last_version_check
+                    }, f)
+            except Exception as e:
+                logging.warning(f"Failed to write version cache to disk: {e}")
+
+    return jsonify({
+        "version": PANEL_VERSION,
+        "latest": _latest_version or PANEL_VERSION
+    })
+	
 @app.route("/api/badges", methods=["GET"])
 def api_badges():
     failed_count = 0
@@ -1076,6 +1147,23 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-nav-badge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff1744; box-shadow: 0 0 8px #ff1744; vertical-align: middle; margin-left: 6px; opacity: 0; transition: opacity 0.3s ease; }
 .wp-nav-badge.active { opacity: 1; }
 
+.version-card {
+    /* Adjust width based on your layout, or let it fill the grid */
+    text-align: center;
+}
+
+.version-badge {
+    display: inline-block;
+    padding: 8px 16px;
+    background-color: #2c2f33; /* Dark discord-like background */
+    color: #7289da; /* Blurple accent */
+    border-radius: 20px;
+    font-family: monospace;
+    font-size: 1.2rem;
+    font-weight: bold;
+    border: 1px solid #7289da;
+}
+
 </style>
 </head>
 <body>
@@ -1187,6 +1275,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 <!-- SYSTEM -->
 <div id="system" class="wp-page">
   <div class="wp-sys-grid" id="sys-info"></div>
+
   <div class="wp-card">
     <div class="wp-card-title" style="justify-content:space-between">
       <span><span class="wp-ic">📡</span> Service Status</span>
@@ -1197,15 +1286,28 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
       <tbody id="sys-services"></tbody>
     </table>
   </div>
+
   <div class="wp-card">
     <div class="wp-card-title"><span class="wp-ic">📋</span> Setup Log</div>
     <div class="wp-log-box" id="sys-log" style="height:200px"></div>
   </div>
+
   <div class="wp-card">
-    <div class="wp-card-title" style="justify-content:space-between">
-      <span><span class="wp-ic">⬆</span> OS Update</span>
-      <button class="wp-btn wp-btn-primary" id="update-btn" onclick="runUpdate()" style="font-size:10px;padding:5px 12px">Check &amp; Apply Updates</button>
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px;">
+      
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div class="wp-card-title" style="margin-bottom: 0;">
+          <span><span class="wp-ic">⬆</span> OS Update</span>
+        </div>
+        <div style="font-size:13px; color:#cdd6f4;">
+          Current Version: <strong id="panel-version-display" style="color:#00e676; font-family:'Share Tech Mono', monospace; font-size:14px; letter-spacing: 1px;">Fetching...</strong>
+        </div>
+      </div>
+
+      <button class="wp-btn wp-btn-primary" id="update-btn" onclick="runUpdate()" style="font-size:10px; padding:6px 14px; white-space: nowrap;">Check &amp; Apply Updates</button>
+      
     </div>
+
     <div id="update-msg"></div>
     <div class="wp-log-box" id="update-log" style="height:200px;display:none;margin-top:10px"></div>
   </div>
@@ -1830,6 +1932,26 @@ async function loadSystem(){
   const sysLogBox = document.getElementById('sys-log');
   sysLogBox.innerHTML = (d.log_tail||[]).map(formatLogLine).join('\n');
   sysLogBox.scrollTop = sysLogBox.scrollHeight;
+
+  // --- Call our smart function! ---
+  loadPanelVersion();
+}
+
+async function loadPanelVersion() {
+    const versionDisplay = document.getElementById('panel-version-display');
+    try {
+        const response = await fetch('/api/system/version');
+        const data = await response.json();
+        
+        // Check if there is a mismatch!
+        if (data.latest && data.latest !== data.version) {
+            versionDisplay.innerHTML = `${data.version} <span style="color:#ffea00; font-size:12px; margin-left: 8px;">(Update available: ${data.latest})</span>`;
+        } else {
+            versionDisplay.innerText = data.version;
+        }
+    } catch (error) {
+        versionDisplay.innerText = "vUnknown";
+    }
 }
 
 // Function to pull live vitals
