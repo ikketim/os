@@ -35,7 +35,7 @@ _last_version_check = 0      # Timestamp of the last GitHub ping
 # Set to False to bypass the disk cache and force a check on reboot.
 # When True (Production Default), version checks survive reboots.
 VERSION_PERSISTENT_CACHE = True  
-VERSION_CACHE_FILE = "/etc/wp-os/version_cache.json"
+VERSION_CACHE_FILE = "/var/cache/wp-os/version_cache.json"
 
 # ---------------------------------------------------------------------------
 # Config
@@ -903,6 +903,9 @@ def api_system_version():
         # --- 3. SAVE PHASE ---
         if VERSION_PERSISTENT_CACHE:
             try:
+                # Ensure the directory (/var/cache/wp-os) exists before writing
+                os.makedirs(os.path.dirname(VERSION_CACHE_FILE), exist_ok=True)
+                
                 with open(VERSION_CACHE_FILE, "w") as f:
                     json.dump({
                         "latest_version": _latest_version,
