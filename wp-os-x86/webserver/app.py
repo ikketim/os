@@ -30,6 +30,14 @@ _latest_version = None       # Cache for the latest version
 _last_version_check = 0      # Timestamp of the last GitHub ping
 
 # ---------------------------------------------------------------------------
+# Developer Flags
+# ---------------------------------------------------------------------------
+# Set to False to bypass the disk cache and force a check on reboot.
+# When True (Production Default), version checks survive reboots.
+VERSION_PERSISTENT_CACHE = True  
+VERSION_CACHE_FILE = "/var/cache/wp-os/version_cache.json"
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 CONFIG_FILE = "/etc/wp-os/config.env"
@@ -860,11 +868,21 @@ def api_system_vitals():
 def api_system_version():
     global _latest_version, _last_version_check
     now = time.time()
-    
-    # Check once per hour
+
+    # --- 1. RECOVERY PHASE ---
+    if VERSION_PERSISTENT_CACHE and _last_version_check == 0:
+        if os.path.exists(VERSION_CACHE_FILE):
+            try:
+                with open(VERSION_CACHE_FILE, "r") as f:
+                    cache_data = json.load(f)
+                _latest_version = cache_data.get("latest_version")
+                _last_version_check = cache_data.get("last_check", 0)
+            except Exception as e:
+                logging.warning(f"Failed to read version cache: {e}")
+
+    # --- 2. API CHECK PHASE (Checks if 1 hour has passed) ---
     if now - _last_version_check > 3600:
-        repo = CFG.get("GITHUB_REPO", "TrelosLeras/os")
-        # Pointing to the official GitHub API for latest release
+        repo = CFG.get("GITHUB_REPO", "ikketim/os")
         url = f"https://api.github.com/repos/{repo}/releases/latest?t={int(now)}"
         
         try:
@@ -875,13 +893,26 @@ def api_system_version():
             secure_context = ssl.create_default_context(cafile=certifi.where())
             with urllib.request.urlopen(req, timeout=5, context=secure_context) as res:
                 data = json.loads(res.read().decode('utf-8'))
-                # The API returns a JSON object. We just grab the "tag_name" (e.g. "v0.0.8")
                 if "tag_name" in data:
                     _latest_version = data["tag_name"]
         except Exception as e:
             logging.warning(f"Release version check failed: {e}") 
         
         _last_version_check = now
+
+        # --- 3. SAVE PHASE ---
+        if VERSION_PERSISTENT_CACHE:
+            try:
+                # Ensure the directory (/var/cache/wp-os) exists before writing
+                os.makedirs(os.path.dirname(VERSION_CACHE_FILE), exist_ok=True)
+                
+                with open(VERSION_CACHE_FILE, "w") as f:
+                    json.dump({
+                        "latest_version": _latest_version,
+                        "last_check": _last_version_check
+                    }, f)
+            except Exception as e:
+                logging.warning(f"Failed to write version cache to disk: {e}")
 
     return jsonify({
         "version": PANEL_VERSION,
