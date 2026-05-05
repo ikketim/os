@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================
 # WhiteoutProjectOS -- System Updater (Releases Edition)
-# Downloads the latest release of OS scripts and the web
-# control panel from the source repository.
+# Downloads the latest versions of OS scripts and the web
+# control panel from the source repository's latest release.
 # ============================================================
 set -euo pipefail
 
@@ -26,8 +26,18 @@ case "$OS_PLATFORM" in
 esac
 
 info "Checking GitHub API for latest release..."
-# Use wget to hit the GitHub API, grep the tag_name, and strip the quotes
-LATEST_TAG=$(wget -qO- --header="User-Agent: WP-OS" "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+
+# Use Python's native JSON parser to safely extract exactly the tag_name
+LATEST_TAG=$(python3 -c "
+import urllib.request, json
+try:
+    req = urllib.request.Request('https://api.github.com/repos/${REPO}/releases/latest', headers={'User-Agent': 'WP-OS', 'Accept': 'application/vnd.github.v3+json'})
+    with urllib.request.urlopen(req, timeout=10) as res:
+        data = json.loads(res.read().decode())
+        print(data.get('tag_name', ''))
+except Exception:
+    pass
+")
 
 if [ -z "$LATEST_TAG" ]; then
     error "Failed to fetch latest release tag from GitHub API. Rate limit or network issue."
@@ -35,8 +45,9 @@ fi
 
 info "Latest release found: ${LATEST_TAG}"
 
-# Dynamically build the URLs pointing to the specific release tag instead of 'main'
+# Dynamically construct URLs based on the Pi/x86 platform and the newest Release Tag
 SCRIPTS_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/wp-os-${OS_PLATFORM}/rootfs-overlay/usr/local/bin"
+# app.py is shared between rpi and x86 -- always fetch from wp-os-x86
 WEBSERVER_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/wp-os-x86/webserver"
 
 echo "========================================"
