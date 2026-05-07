@@ -166,6 +166,15 @@ def list_slots():
         meta = _read_json(meta_f, {})
         slot_id = d.name
         tok = read_token(slot_id)
+		
+		# --- NEW: Read the saved startup mode from disk ---
+        startup_mode = "--autoupdate"
+        flags_f = d / ".startup_flags"
+        if flags_f.exists():
+            try:
+                startup_mode = flags_f.read_text().strip()
+            except: pass
+				
         slots.append({
             "slot_id": slot_id,
             "type": meta.get("type", "?"),
@@ -1589,6 +1598,16 @@ async function loadBots(){
 
 function slotCard(s){
   const notInstalled=!s.installed;
+  
+  // --- NEW: Map the saved backend state to the visible UI labels ---
+  const modeMap = {
+    '--autoupdate': 'Standard (Auto-Update)',
+    '--no-update': 'Skip Update (--no-update)',
+    '--beta': 'Beta Branch (--beta)'
+  };
+  const currentMode = s.startup_mode || '--autoupdate';
+  const currentModeLabel = modeMap[currentMode] || 'Standard (Auto-Update)';
+
   return `<div class="wp-card" id="slot-${s.slot_id}">
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
     <span style="font-family:'Share Tech Mono',monospace;font-size:15px;color:#00c8ff">${esc(s.slot_id)}</span>
@@ -1597,7 +1616,7 @@ function slotCard(s){
     <span style="color:#aee5ff;font-size:12px">${esc(s.label)}</span>
     <span class="wp-token-mask${s.has_token?' has-token':''}" style="margin-left:auto">${esc(s.token_mask)}</span>
   </div>
-${notInstalled?`<div class="wp-not-installed">
+  ${notInstalled?`<div class="wp-not-installed">
     <span>&#9888; Not installed — click <strong>Install</strong> to download and set up this bot.</span>
     <button class="wp-btn wp-btn-primary" onclick="installSlot('${s.slot_id}','${s.type}')">&#8681; Install</button>
   </div>`:''}
@@ -1609,13 +1628,13 @@ ${notInstalled?`<div class="wp-not-installed">
     </span>
     
     <div class="wp-sel-wrap" style="min-width: 200px; max-width: 280px;">
-      <div class="wp-sel-box" id="box-menu-mode-${s.slot_id}" onclick="toggleCustomSel('menu-mode-${s.slot_id}', this.id)" style="padding: 4px 28px 4px 10px; background-position: right 8px center; background-color: rgba(0,0,0,.4);">Standard (Auto-Update)</div>
+      <div class="wp-sel-box" id="box-menu-mode-${s.slot_id}" onclick="toggleCustomSel('menu-mode-${s.slot_id}', this.id)" style="padding: 4px 28px 4px 10px; background-position: right 8px center; background-color: rgba(0,0,0,.4);">${currentModeLabel}</div>
       <div class="wp-sel-menu" id="menu-mode-${s.slot_id}">
         <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--autoupdate', 'Standard (Auto-Update)')">Standard (Auto-Update)</div>
         <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--no-update', 'Skip Update (--no-update)')">Skip Update (--no-update)</div>
         <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--beta', 'Beta Branch (--beta)')">Beta Branch (--beta)</div>
       </div>
-      <input type="hidden" id="mode-${s.slot_id}" value="--autoupdate">
+      <input type="hidden" id="mode-${s.slot_id}" value="${currentMode}">
     </div>
     </div>
   ` : ''}
@@ -1670,11 +1689,11 @@ async function saveVcConfig(sid){
   else{msg.innerHTML='<span style="color:#00e676">&#10003; Saved &#8212; restart bot to apply</span>';setTimeout(()=>{if(msg)msg.innerHTML='';},3000);}
 }
 
-async function slotAct(sid,action){
+async function slotAct(sid, action) {
   let payload = {};
   
-  // If they are starting the bot, look for the dropdown value
-  if (action === 'start') {
+  // Grab the dropdown value for BOTH start and restart actions
+  if (action === 'start' || action === 'restart') {
     const modeSel = document.getElementById(`mode-${sid}`);
     if (modeSel) {
       payload.mode = modeSel.value;
