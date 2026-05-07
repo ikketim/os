@@ -94,6 +94,10 @@ update_file "${WEBSERVER_DIR}/app.py" \
 update_file /usr/local/bin/wp-os-update.sh \
   "${SCRIPTS_URL}/wp-os-update.sh" 755
 
+# Clears latest version cache
+info "Clearing version cache..."
+rm -f /var/cache/wp-os/version_cache.json
+
 # Restart web panel to pick up new app.py
 info "Restarting web control panel..."
 if systemctl restart wp-os-web 2>/dev/null; then
