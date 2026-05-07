@@ -352,6 +352,11 @@ def _save_startup_mode(slot_id, mode):
             with open(flags_file, "w") as f:
                 f.write(mode)
             os.chmod(flags_file, 0o644)
+            
+            # --- NEW: Hand ownership to the bot user so it can reset itself ---
+            uid, gid = _os_user_ids()
+            os.chown(flags_file, uid, gid)
+            
         except Exception as e:
             logging.warning(f"Failed to write startup flags: {e}")
 
