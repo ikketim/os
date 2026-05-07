@@ -93,6 +93,10 @@ update_file "${WEBSERVER_DIR}/app.py" \
 # Update self last so any earlier failure doesn't break future runs
 update_file /usr/local/bin/wp-os-update.sh \
   "${SCRIPTS_URL}/wp-os-update.sh" 755
+  
+# --- NEW CACHE CLEARING LOGIC ---
+info "Clearing version cache..."
+rm -f /var/cache/wp-os/version_cache.json
 
 # Restart web panel to pick up new app.py
 info "Restarting web control panel..."
