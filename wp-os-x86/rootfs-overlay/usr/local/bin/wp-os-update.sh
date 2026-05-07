@@ -15,7 +15,7 @@ error() { echo -e "${RED}[ERR]${NC}    $*"; exit 1; }
 
 [ "$EUID" -eq 0 ] || error "Run as root: sudo wp-os-update.sh"
 [ -z "${OS_PLATFORM:-}"  ] && error "OS_PLATFORM not set in /etc/wp-os/config.env"
-[ -z "${WEBSERVER_DIR:-}"] && error "WEBSERVER_DIR not set in /etc/wp-os/config.env"
+[ -z "${WEBSERVER_DIR:-}" ] && error "WEBSERVER_DIR not set in /etc/wp-os/config.env"
 
 # Fallback to TrelosLeras/os if it's not in the config yet
 REPO="${GITHUB_REPO:-TrelosLeras/os}"
