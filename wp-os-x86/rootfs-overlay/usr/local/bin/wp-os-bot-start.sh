@@ -33,6 +33,12 @@ if [ -f "$FLAGS_FILE" ]; then
   fi
 fi
 
+# --- ONE-TIME FLAG RESET LOGIC ---
+# If the flag is --repair, save it to run right now, but reset the file for next time!
+if [[ "$BOT_FLAGS" == *"--repair"* ]]; then
+  echo "--autoupdate" > "$FLAGS_FILE"
+fi
+
 [ -z "$TOKEN" ] && echo "[wp-os] WARNING: no token set for '${LABEL}' (${SLOT_ID})" >&2
 echo "[wp-os] Starting slot '${LABEL}' type=${BOT_TYPE} flags=[${BOT_FLAGS}]" >&2
 
