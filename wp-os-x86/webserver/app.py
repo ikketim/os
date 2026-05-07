@@ -1606,7 +1606,7 @@ function slotCard(s){
   const modeMap = {
     '--autoupdate': 'Standard (Auto-Update)',
     '--no-update': 'Skip Update (--no-update)',
-    '--beta': 'Beta Branch (--beta)'
+    '--repair': 'Repair (--repair)'
   };
   const currentMode = s.startup_mode || '--autoupdate';
   const currentModeLabel = modeMap[currentMode] || 'Standard (Auto-Update)';
@@ -1635,7 +1635,7 @@ function slotCard(s){
       <div class="wp-sel-menu" id="menu-mode-${s.slot_id}">
         <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--autoupdate', 'Standard (Auto-Update)')">Standard (Auto-Update)</div>
         <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--no-update', 'Skip Update (--no-update)')">Skip Update (--no-update)</div>
-        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--beta', 'Beta Branch (--beta)')">Beta Branch (--beta)</div>
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--repair', 'Repair Files (--repair)')">Repair Files (run once) (--repair)</div>
       </div>
       <input type="hidden" id="mode-${s.slot_id}" value="${currentMode}">
     </div>
