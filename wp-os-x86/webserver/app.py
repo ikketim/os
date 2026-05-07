@@ -25,7 +25,7 @@ from flask import Flask, jsonify, request
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-PANEL_VERSION = "v0.0.12-ALPHA"
+PANEL_VERSION = "v0.0.13-ALPHA"
 _latest_version = None       # Cache for the latest version
 _last_version_check = 0      # Timestamp of the last GitHub ping
 
@@ -1602,23 +1602,25 @@ ${notInstalled?`<div class="wp-not-installed">
     <button class="wp-btn wp-btn-primary" onclick="installSlot('${s.slot_id}','${s.type}')">&#8681; Install</button>
   </div>`:''}
   
-  <div class="wp-btn-row">
-    ${(s.type === 'wos-py' || s.type === 'kingshot') ? `
-    <div style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">
-      <span style="font-size: 11px; letter-spacing: 1px; color: #6c7a96; text-transform: uppercase;">Startup Mode:</span>
-      
-      <div class="wp-sel-wrap" style="min-width: 190px; flex: none;">
-        <div class="wp-sel-box" id="box-menu-mode-${s.slot_id}" onclick="toggleCustomSel('menu-mode-${s.slot_id}', this.id)" style="padding: 4px 28px 4px 10px; background-position: right 8px center;">Standard (Auto-Update)</div>
-        <div class="wp-sel-menu" id="menu-mode-${s.slot_id}">
-          <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--autoupdate', 'Standard (Auto-Update)')">Standard (Auto-Update)</div>
-          <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--no-update', 'Skip Update (--no-update)')">Skip Update (--no-update)</div>
-          <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--beta', 'Beta Branch (--beta)')">Beta Branch (--beta)</div>
-        </div>
-        <input type="hidden" id="mode-${s.slot_id}" value="--autoupdate">
+  ${(s.type === 'wos-py' || s.type === 'kingshot') ? `
+  <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; background: rgba(0,0,0,.2); border: 1px solid #1e2a3a; padding: 8px 14px; border-radius: 6px;">
+    <span style="font-size: 11px; letter-spacing: 1px; color: #6c7a96; text-transform: uppercase;">
+      <span style="color:#00c8ff; margin-right: 4px;">⚙</span> Startup Mode
+    </span>
+    
+    <div class="wp-sel-wrap" style="min-width: 200px; max-width: 280px;">
+      <div class="wp-sel-box" id="box-menu-mode-${s.slot_id}" onclick="toggleCustomSel('menu-mode-${s.slot_id}', this.id)" style="padding: 4px 28px 4px 10px; background-position: right 8px center; background-color: rgba(0,0,0,.4);">Standard (Auto-Update)</div>
+      <div class="wp-sel-menu" id="menu-mode-${s.slot_id}">
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--autoupdate', 'Standard (Auto-Update)')">Standard (Auto-Update)</div>
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--no-update', 'Skip Update (--no-update)')">Skip Update (--no-update)</div>
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--beta', 'Beta Branch (--beta)')">Beta Branch (--beta)</div>
       </div>
-      </div>
-    ` : ''}
+      <input type="hidden" id="mode-${s.slot_id}" value="--autoupdate">
+    </div>
+    </div>
+  ` : ''}
 
+  <div class="wp-btn-row">
     <button class="wp-btn wp-btn-success" onclick="slotAct('${s.slot_id}','start')">&#9654; Start</button>
     <button class="wp-btn wp-btn-danger" onclick="slotAct('${s.slot_id}','stop')">&#9632; Stop</button>
     <button class="wp-btn wp-btn-warn" onclick="slotAct('${s.slot_id}','restart')">&#8635; Restart</button>
