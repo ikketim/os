@@ -343,11 +343,8 @@ def api_slots_remove(slot_id):
     shutil.rmtree(slot_dir, ignore_errors=True)
     return jsonify({"ok": True})
 
-@app.route("/api/slots/<slot_id>/start", methods=["POST"])
-def api_slot_start(slot_id):
-    data = request.json or {}
-    mode = data.get("mode", "--autoupdate")
-    
+# Helper function to prevent repeating ourselves
+def _save_startup_mode(slot_id, mode):
     slot_dir = BOTS_DIR / slot_id
     if slot_dir.exists():
         flags_file = slot_dir / ".startup_flags"
@@ -357,7 +354,11 @@ def api_slot_start(slot_id):
             os.chmod(flags_file, 0o644)
         except Exception as e:
             logging.warning(f"Failed to write startup flags: {e}")
-            
+
+@app.route("/api/slots/<slot_id>/start", methods=["POST"])
+def api_slot_start(slot_id):
+    data = request.json or {}
+    _save_startup_mode(slot_id, data.get("mode", "--autoupdate"))
     svc_run("start", slot_id)
     return jsonify({"ok": True, "status": svc_status(slot_id)})
 
@@ -368,6 +369,8 @@ def api_slot_stop(slot_id):
 
 @app.route("/api/slots/<slot_id>/restart", methods=["POST"])
 def api_slot_restart(slot_id):
+    data = request.json or {}
+    _save_startup_mode(slot_id, data.get("mode", "--autoupdate"))
     svc_run("restart", slot_id)
     return jsonify({"ok": True, "status": svc_status(slot_id)})
 
