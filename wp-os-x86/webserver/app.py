@@ -25,7 +25,7 @@ from flask import Flask, jsonify, request
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-PANEL_VERSION = "v0.0.15-ALPHA"
+PANEL_VERSION = "v0.0.16-ALPHA"
 _latest_version = None       # Cache for the latest version
 _last_version_check = 0      # Timestamp of the last GitHub ping
 
@@ -1698,9 +1698,8 @@ async function saveVcConfig(sid){
 }
 
 async function slotAct(sid, action) {
-  let payload = {};
+  let payload = {}; // Initialize an empty object
   
-  // Grab the dropdown value for BOTH start and restart actions
   if (action === 'start' || action === 'restart') {
     const modeSel = document.getElementById(`mode-${sid}`);
     if (modeSel) {
@@ -1708,9 +1707,9 @@ async function slotAct(sid, action) {
     }
   }
   
-  // Only send the payload if it actually has data, otherwise send undefined
-  const bodyData = Object.keys(payload).length ? payload : undefined;
-  await api('POST', `/slots/${sid}/${action}`, bodyData);
+  // By sending `payload` directly (even if it's empty), fetch sends "{}" 
+  // instead of an empty body, which prevents Flask from crashing!
+  await api('POST', `/slots/${sid}/${action}`, payload);
   loadBots();
 }
 
