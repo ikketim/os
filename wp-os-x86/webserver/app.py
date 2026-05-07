@@ -336,6 +336,19 @@ def api_slots_remove(slot_id):
 
 @app.route("/api/slots/<slot_id>/start", methods=["POST"])
 def api_slot_start(slot_id):
+    data = request.json or {}
+    mode = data.get("mode", "--autoupdate")
+    
+    slot_dir = BOTS_DIR / slot_id
+    if slot_dir.exists():
+        flags_file = slot_dir / ".startup_flags"
+        try:
+            with open(flags_file, "w") as f:
+                f.write(mode)
+            os.chmod(flags_file, 0o644)
+        except Exception as e:
+            logging.warning(f"Failed to write startup flags: {e}")
+            
     svc_run("start", slot_id)
     return jsonify({"ok": True, "status": svc_status(slot_id)})
 
@@ -1588,6 +1601,18 @@ function slotCard(s){
     <span>&#9888; Not installed — click <strong>Install</strong> to download and set up this bot.</span>
     <button class="wp-btn wp-btn-primary" onclick="installSlot('${s.slot_id}','${s.type}')">&#8681; Install</button>
   </div>`:''}
+  
+  ${(s.type === 'wos-py' || s.type === 'kingshot') ? `
+  <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+    <span style="font-size: 11px; letter-spacing: 1px; color: #6c7a96; text-transform: uppercase;">Startup Mode:</span>
+    <select id="mode-${s.slot_id}" class="wp-inp" style="padding: 4px 8px; width: auto; border-color: #3c4e6a;">
+      <option value="--autoupdate" selected>Standard (Auto-Update)</option>
+      <option value="--no-update">Skip Update (--no-update)</option>
+      <option value="--beta">Beta Branch (--beta)</option>
+    </select>
+  </div>
+  ` : ''}
+
   <div class="wp-btn-row">
     <button class="wp-btn wp-btn-success" onclick="slotAct('${s.slot_id}','start')">&#9654; Start</button>
     <button class="wp-btn wp-btn-danger" onclick="slotAct('${s.slot_id}','stop')">&#9632; Stop</button>
@@ -1639,7 +1664,19 @@ async function saveVcConfig(sid){
 }
 
 async function slotAct(sid,action){
-  await api('POST',`/slots/${sid}/${action}`);
+  let payload = {};
+  
+  // If they are starting the bot, look for the dropdown value
+  if (action === 'start') {
+    const modeSel = document.getElementById(`mode-${sid}`);
+    if (modeSel) {
+      payload.mode = modeSel.value;
+    }
+  }
+  
+  // Only send the payload if it actually has data, otherwise send undefined
+  const bodyData = Object.keys(payload).length ? payload : undefined;
+  await api('POST', `/slots/${sid}/${action}`, bodyData);
   loadBots();
 }
 
