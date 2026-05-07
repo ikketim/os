@@ -166,6 +166,15 @@ def list_slots():
         meta = _read_json(meta_f, {})
         slot_id = d.name
         tok = read_token(slot_id)
+        
+        # Read the saved startup mode from disk
+        startup_mode = "--autoupdate"
+        flags_f = d / ".startup_flags"
+        if flags_f.exists():
+            try:
+                startup_mode = flags_f.read_text().strip()
+            except: pass
+
         slots.append({
             "slot_id": slot_id,
             "type": meta.get("type", "?"),
@@ -175,6 +184,7 @@ def list_slots():
             "service_status": svc_status(slot_id),
             "has_token": bool(tok),
             "token_mask": mask(tok),
+            "startup_mode": startup_mode
         })
     return slots
 
@@ -334,8 +344,24 @@ def api_slots_remove(slot_id):
     shutil.rmtree(slot_dir, ignore_errors=True)
     return jsonify({"ok": True})
 
+def _save_startup_mode(slot_id, mode):
+    slot_dir = BOTS_DIR / slot_id
+    if slot_dir.exists():
+        flags_file = slot_dir / ".startup_flags"
+        try:
+            with open(flags_file, "w") as f:
+                f.write(mode)
+            os.chmod(flags_file, 0o644)
+            # Hand ownership to the bot user so it can reset itself!
+            uid, gid = _os_user_ids()
+            os.chown(flags_file, uid, gid)
+        except Exception as e:
+            logging.warning(f"Failed to write startup flags: {e}")
+			
 @app.route("/api/slots/<slot_id>/start", methods=["POST"])
 def api_slot_start(slot_id):
+    data = request.json or {}
+    _save_startup_mode(slot_id, data.get("mode", "--autoupdate"))
     svc_run("start", slot_id)
     return jsonify({"ok": True, "status": svc_status(slot_id)})
 
@@ -346,6 +372,8 @@ def api_slot_stop(slot_id):
 
 @app.route("/api/slots/<slot_id>/restart", methods=["POST"])
 def api_slot_restart(slot_id):
+    data = request.json or {}
+    _save_startup_mode(slot_id, data.get("mode", "--autoupdate"))
     svc_run("restart", slot_id)
     return jsonify({"ok": True, "status": svc_status(slot_id)})
 
@@ -1576,6 +1604,16 @@ async function loadBots(){
 
 function slotCard(s){
   const notInstalled=!s.installed;
+  
+  // Map the saved backend state to the visible UI labels
+  const modeMap = {
+    '--autoupdate': 'Standard (Auto-Update)',
+    '--no-update': 'Skip Update (--no-update)',
+    '--repair': 'Run Repair (--repair)'
+  };
+  const currentMode = s.startup_mode || '--autoupdate';
+  const currentModeLabel = modeMap[currentMode] || 'Standard (Auto-Update)';
+
   return `<div class="wp-card" id="slot-${s.slot_id}">
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
     <span style="font-family:'Share Tech Mono',monospace;font-size:15px;color:#00c8ff">${esc(s.slot_id)}</span>
@@ -1588,6 +1626,25 @@ function slotCard(s){
     <span>&#9888; Not installed — click <strong>Install</strong> to download and set up this bot.</span>
     <button class="wp-btn wp-btn-primary" onclick="installSlot('${s.slot_id}','${s.type}')">&#8681; Install</button>
   </div>`:''}
+  
+  ${(s.type === 'wos-py' || s.type === 'kingshot') ? `
+  <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; background: rgba(0,0,0,.2); border: 1px solid #1e2a3a; padding: 8px 14px; border-radius: 6px;">
+    <span style="font-size: 11px; letter-spacing: 1px; color: #6c7a96; text-transform: uppercase;">
+      <span style="color:#00c8ff; margin-right: 4px;">⚙</span> Startup Mode
+    </span>
+    
+    <div class="wp-sel-wrap" style="min-width: 200px; max-width: 280px;">
+      <div class="wp-sel-box" id="box-menu-mode-${s.slot_id}" onclick="toggleCustomSel('menu-mode-${s.slot_id}', this.id)" style="padding: 4px 28px 4px 10px; background-position: right 8px center; background-color: rgba(0,0,0,.4);">${currentModeLabel}</div>
+      <div class="wp-sel-menu" id="menu-mode-${s.slot_id}">
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--autoupdate', 'Standard (Auto-Update)')">Standard (Auto-Update)</div>
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--no-update', 'Skip Update (--no-update)')">Skip Update (--no-update)</div>
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--repair', 'Run Repair (--repair)')">Run Repair (--repair)</div>
+      </div>
+      <input type="hidden" id="mode-${s.slot_id}" value="${currentMode}">
+    </div>
+    </div>
+  ` : ''}
+
   <div class="wp-btn-row">
     <button class="wp-btn wp-btn-success" onclick="slotAct('${s.slot_id}','start')">&#9654; Start</button>
     <button class="wp-btn wp-btn-danger" onclick="slotAct('${s.slot_id}','stop')">&#9632; Stop</button>
@@ -1638,8 +1695,19 @@ async function saveVcConfig(sid){
   else{msg.innerHTML='<span style="color:#00e676">&#10003; Saved &#8212; restart bot to apply</span>';setTimeout(()=>{if(msg)msg.innerHTML='';},3000);}
 }
 
-async function slotAct(sid,action){
-  await api('POST',`/slots/${sid}/${action}`);
+async function slotAct(sid, action) {
+  let payload = {}; // Initialize an empty object
+  
+  if (action === 'start' || action === 'restart') {
+    const modeSel = document.getElementById(`mode-${sid}`);
+    if (modeSel) {
+      payload.mode = modeSel.value;
+    }
+  }
+  
+  // By sending `payload` directly (even if it's empty), fetch sends "{}" 
+  // instead of an empty body, which prevents Flask from crashing!
+  await api('POST', `/slots/${sid}/${action}`, payload);
   loadBots();
 }
 
