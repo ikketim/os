@@ -184,6 +184,7 @@ def list_slots():
             "service_status": svc_status(slot_id),
             "has_token": bool(tok),
             "token_mask": mask(tok),
+			"startup_mode": startup_mode
         })
     return slots
 
