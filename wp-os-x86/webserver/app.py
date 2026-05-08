@@ -1118,6 +1118,8 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-modal-overlay.active .wp-modal {transform: scale(1);opacity: 1;}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width: 768px) {
+  wp-sys-grid {grid-template-columns: 1fr 1fr !important; gap: 10px !important;}
+  .wp-sys-tile {padding: 10px !important;}
   .wp-table thead { display: none; }
   .wp-table tbody { display: block; width: 100%; }
   
