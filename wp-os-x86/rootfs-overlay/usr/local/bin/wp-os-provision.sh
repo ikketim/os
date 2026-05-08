@@ -259,6 +259,8 @@ cat > /etc/systemd/system/wp-os-bot@.service <<EOF
 [Unit]
 Description=WhiteoutProjectOS Bot slot %i
 After=network.target
+StartLimitIntervalSec=30
+StartLimitBurst=3
 
 [Service]
 Type=simple

@@ -14,12 +14,28 @@ import subprocess
 import threading
 import certifi
 import ssl
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+PANEL_VERSION = "v0.0.9"
+_latest_version = None       # Cache for the latest version
+_last_version_check = 0      # Timestamp of the last GitHub ping
+
+# ---------------------------------------------------------------------------
+# Developer Flags
+# ---------------------------------------------------------------------------
+# Set to False to bypass the disk cache and force a check on reboot.
+# When True (Production Default), version checks survive reboots.
+VERSION_PERSISTENT_CACHE = True  
+VERSION_CACHE_FILE = "/var/cache/wp-os/version_cache.json"
 
 # ---------------------------------------------------------------------------
 # Config
@@ -150,6 +166,15 @@ def list_slots():
         meta = _read_json(meta_f, {})
         slot_id = d.name
         tok = read_token(slot_id)
+		
+		# --- NEW: Read the saved startup mode from disk ---
+        startup_mode = "--autoupdate"
+        flags_f = d / ".startup_flags"
+        if flags_f.exists():
+            try:
+                startup_mode = flags_f.read_text().strip()
+            except: pass
+				
         slots.append({
             "slot_id": slot_id,
             "type": meta.get("type", "?"),
@@ -159,6 +184,7 @@ def list_slots():
             "service_status": svc_status(slot_id),
             "has_token": bool(tok),
             "token_mask": mask(tok),
+			"startup_mode": startup_mode
         })
     return slots
 
@@ -318,8 +344,27 @@ def api_slots_remove(slot_id):
     shutil.rmtree(slot_dir, ignore_errors=True)
     return jsonify({"ok": True})
 
+# Helper function to prevent repeating ourselves
+def _save_startup_mode(slot_id, mode):
+    slot_dir = BOTS_DIR / slot_id
+    if slot_dir.exists():
+        flags_file = slot_dir / ".startup_flags"
+        try:
+            with open(flags_file, "w") as f:
+                f.write(mode)
+            os.chmod(flags_file, 0o644)
+            
+            # --- NEW: Hand ownership to the bot user so it can reset itself ---
+            uid, gid = _os_user_ids()
+            os.chown(flags_file, uid, gid)
+            
+        except Exception as e:
+            logging.warning(f"Failed to write startup flags: {e}")
+
 @app.route("/api/slots/<slot_id>/start", methods=["POST"])
 def api_slot_start(slot_id):
+    data = request.json or {}
+    _save_startup_mode(slot_id, data.get("mode", "--autoupdate"))
     svc_run("start", slot_id)
     return jsonify({"ok": True, "status": svc_status(slot_id)})
 
@@ -330,6 +375,8 @@ def api_slot_stop(slot_id):
 
 @app.route("/api/slots/<slot_id>/restart", methods=["POST"])
 def api_slot_restart(slot_id):
+    data = request.json or {}
+    _save_startup_mode(slot_id, data.get("mode", "--autoupdate"))
     svc_run("restart", slot_id)
     return jsonify({"ok": True, "status": svc_status(slot_id)})
 
@@ -446,6 +493,24 @@ def api_install_log(slot_id):
         return jsonify({"lines": [l.rstrip() for l in lines[-n:]]})
     except FileNotFoundError:
         return jsonify({"lines": []})
+
+@app.route("/api/stream", methods=["GET"])
+def api_stream():
+    def event_stream():
+        last_state = None
+        while True:
+            # Check the current state of all bots
+            current_state = list_slots()
+            
+            # If the state changed since the last check, push it to the browser!
+            if current_state != last_state:
+                yield f"data: {json.dumps(current_state)}\n\n"
+                last_state = current_state
+                
+            # Wait 1 second before checking again
+            time.sleep(1)
+            
+    return Response(event_stream(), mimetype="text/event-stream")
 
 # ---------------------------------------------------------------------------
 # Token API
@@ -848,6 +913,61 @@ def api_system_vitals():
         "disk_text": disk_text
     })
 
+@app.route("/api/system/version", methods=["GET"])
+def api_system_version():
+    global _latest_version, _last_version_check
+    now = time.time()
+
+    # --- 1. RECOVERY PHASE ---
+    if VERSION_PERSISTENT_CACHE and _last_version_check == 0:
+        if os.path.exists(VERSION_CACHE_FILE):
+            try:
+                with open(VERSION_CACHE_FILE, "r") as f:
+                    cache_data = json.load(f)
+                _latest_version = cache_data.get("latest_version")
+                _last_version_check = cache_data.get("last_check", 0)
+            except Exception as e:
+                logging.warning(f"Failed to read version cache: {e}")
+
+    # --- 2. API CHECK PHASE (Checks if 1 hour has passed) ---
+    if now - _last_version_check > 3600:
+        repo = CFG.get("GITHUB_REPO", "ikketim/os")
+        url = f"https://api.github.com/repos/{repo}/releases/latest?t={int(now)}"
+        
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "WP-OS",
+                "Accept": "application/vnd.github.v3+json"
+            })
+            secure_context = ssl.create_default_context(cafile=certifi.where())
+            with urllib.request.urlopen(req, timeout=5, context=secure_context) as res:
+                data = json.loads(res.read().decode('utf-8'))
+                if "tag_name" in data:
+                    _latest_version = data["tag_name"]
+        except Exception as e:
+            logging.warning(f"Release version check failed: {e}") 
+        
+        _last_version_check = now
+
+        # --- 3. SAVE PHASE ---
+        if VERSION_PERSISTENT_CACHE:
+            try:
+                # Ensure the directory (/var/cache/wp-os) exists before writing
+                os.makedirs(os.path.dirname(VERSION_CACHE_FILE), exist_ok=True)
+                
+                with open(VERSION_CACHE_FILE, "w") as f:
+                    json.dump({
+                        "latest_version": _latest_version,
+                        "last_check": _last_version_check
+                    }, f)
+            except Exception as e:
+                logging.warning(f"Failed to write version cache to disk: {e}")
+
+    return jsonify({
+        "version": PANEL_VERSION,
+        "latest": _latest_version or PANEL_VERSION
+    })
+	
 @app.route("/api/badges", methods=["GET"])
 def api_badges():
     failed_count = 0
@@ -929,7 +1049,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-hdr-right{display:flex;align-items:center;gap:8px;font-size:13px;color:#25d79d}
 .wp-dot{width:8px;height:8px;border-radius:50%;background:#00e676;box-shadow:0 0 8px #00e676;flex-shrink:0}
 .wp-nav{display:flex;gap:4px;padding:14px 32px;background:#172643;border-bottom:1px solid #1e2a3a}
-.wp-nav button{padding:8px 22px;border:none;border-radius:6px;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;background:transparent;color:#6c7a96;transition:.15s}
+.wp-nav button{position:relative;padding:8px 22px;border:none;border-radius:6px;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;background:transparent;color:#6c7a96;transition:.15s}
 .wp-nav button.active{background:#283d66;color:#cdd6f4;border:1px solid #1e2a3a}
 .wp-nav button:hover:not(.active){color:#cdd6f4}
 .wp-main{max-width:1100px;margin:0 auto;padding:28px 24px}
@@ -1017,6 +1137,8 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-modal-overlay.active .wp-modal {transform: scale(1);opacity: 1;}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width: 768px) {
+  .wp-sys-grid {grid-template-columns: 1fr 1fr !important; gap: 10px !important;}
+  .wp-sys-tile {padding: 10px !important;}
   .wp-table thead { display: none; }
   .wp-table tbody { display: block; width: 100%; }
   
@@ -1073,7 +1195,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-log-box { scroll-behavior: smooth; }
 
 /* Nav Badges */
-.wp-nav-badge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff1744; box-shadow: 0 0 8px #ff1744; vertical-align: middle; margin-left: 6px; opacity: 0; transition: opacity 0.3s ease; }
+.wp-nav-badge { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #ff1744; box-shadow: 0 0 8px #ff1744; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
 .wp-nav-badge.active { opacity: 1; }
 
 </style>
@@ -1187,6 +1309,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 <!-- SYSTEM -->
 <div id="system" class="wp-page">
   <div class="wp-sys-grid" id="sys-info"></div>
+
   <div class="wp-card">
     <div class="wp-card-title" style="justify-content:space-between">
       <span><span class="wp-ic">📡</span> Service Status</span>
@@ -1197,15 +1320,28 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
       <tbody id="sys-services"></tbody>
     </table>
   </div>
+
   <div class="wp-card">
     <div class="wp-card-title"><span class="wp-ic">📋</span> Setup Log</div>
     <div class="wp-log-box" id="sys-log" style="height:200px"></div>
   </div>
+
   <div class="wp-card">
-    <div class="wp-card-title" style="justify-content:space-between">
-      <span><span class="wp-ic">⬆</span> OS Update</span>
-      <button class="wp-btn wp-btn-primary" id="update-btn" onclick="runUpdate()" style="font-size:10px;padding:5px 12px">Check &amp; Apply Updates</button>
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px;">
+      
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div class="wp-card-title" style="margin-bottom: 0;">
+          <span><span class="wp-ic">⬆</span> OS Update</span>
+        </div>
+        <div style="font-size:13px; color:#cdd6f4;">
+          Current Version: <strong id="panel-version-display" style="color:#00e676; font-family:'Share Tech Mono', monospace; font-size:14px; letter-spacing: 1px;">Fetching...</strong>
+        </div>
+      </div>
+
+      <button class="wp-btn wp-btn-primary" id="update-btn" onclick="runUpdate()" style="font-size:10px; padding:6px 14px; white-space: nowrap;">Check &amp; Apply Updates</button>
+      
     </div>
+
     <div id="update-msg"></div>
     <div class="wp-log-box" id="update-log" style="height:200px;display:none;margin-top:10px"></div>
   </div>
@@ -1441,11 +1577,21 @@ async function api(method, path, body){
     btn.innerHTML = '<span class="wp-spin" style="width:10px;height:10px;margin-right:6px"></span> Wait...';
   }
 
-  const opts={method,headers:{'Content-Type':'application/json'}};
+  // --- NEW: Add cache bypass headers ---
+  const opts = { 
+    method, 
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store' 
+  };
   if(body) opts.body=JSON.stringify(body);
   
+  // --- NEW: Add timestamp to the URL to completely bust the browser cache ---
+  const timestamp = new Date().getTime();
+  const separator = path.includes('?') ? '&' : '?';
+  const finalPath = '/api' + path + separator + '_t=' + timestamp;
+
   try {
-    const r=await fetch('/api'+path,opts);
+    const r=await fetch(finalPath, opts);
     return await r.json();
   } catch(e) {
     return {error: 'Network connection failed.'};
@@ -1472,13 +1618,65 @@ async function loadBots(){
   suggestSlotId();
 }
 
+// --- TRUE REAL-TIME LISTENER ---
+function startRealtimeStream() {
+  const source = new EventSource('/api/stream');
+
+  source.onmessage = function(event) {
+    // Only update the UI if the user is looking at the Bots tab
+    if (!document.getElementById('bots').classList.contains('active')) return;
+
+    const freshSlots = JSON.parse(event.data);
+    freshSlots.forEach(s => {
+      
+      // 1. Instantly update the colored Status Pill
+      const pill = document.getElementById(`status-${s.slot_id}`);
+      if (pill && pill.textContent !== s.service_status) {
+        pill.className = `wp-pill ${pillClass(s.service_status)}`;
+        pill.textContent = s.service_status;
+      }
+
+      // 2. Instantly reset the Dropdown after --repair finishes
+      const modeInput = document.getElementById(`mode-${s.slot_id}`);
+      const modeBox = document.getElementById(`box-menu-mode-${s.slot_id}`);
+      
+      if (modeInput && modeBox && modeInput.value === '--repair' && s.startup_mode !== '--repair') {
+        const modeMap = {
+          '--autoupdate': 'Standard (Auto-Update)',
+          '--no-update': 'Skip Update (--no-update)',
+          '--repair': 'Repair (--repair)'
+        };
+        const newMode = s.startup_mode || '--autoupdate';
+        modeInput.value = newMode;
+        modeBox.textContent = modeMap[newMode] || 'Standard (Auto-Update)';
+      }
+    });
+  };
+
+  // If the connection drops (e.g., server reboots), automatically try to reconnect
+  source.onerror = function() {
+    source.close();
+    setTimeout(startRealtimeStream, 3000); 
+  };
+}
+
 function slotCard(s){
   const notInstalled=!s.installed;
+  
+  // --- NEW: Map the saved backend state to the visible UI labels ---
+  const modeMap = {
+    '--autoupdate': 'Standard (Auto-Update)',
+    '--no-update': 'Skip Update (--no-update)',
+    '--repair': 'Repair (--repair)'
+  };
+  const currentMode = s.startup_mode || '--autoupdate';
+  const currentModeLabel = modeMap[currentMode] || 'Standard (Auto-Update)';
+
   return `<div class="wp-card" id="slot-${s.slot_id}">
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
     <span style="font-family:'Share Tech Mono',monospace;font-size:15px;color:#00c8ff">${esc(s.slot_id)}</span>
     ${typeTag(s.type)}
-    <span class="wp-pill ${pillClass(s.service_status)}">${esc(s.service_status)}</span>
+    <span id="status-${s.slot_id}" class="wp-pill ${pillClass(s.service_status)}">${esc(s.service_status)}</span>
     <span style="color:#aee5ff;font-size:12px">${esc(s.label)}</span>
     <span class="wp-token-mask${s.has_token?' has-token':''}" style="margin-left:auto">${esc(s.token_mask)}</span>
   </div>
@@ -1486,6 +1684,25 @@ function slotCard(s){
     <span>&#9888; Not installed — click <strong>Install</strong> to download and set up this bot.</span>
     <button class="wp-btn wp-btn-primary" onclick="installSlot('${s.slot_id}','${s.type}')">&#8681; Install</button>
   </div>`:''}
+  
+  ${(s.type === 'wos-py' || s.type === 'kingshot') ? `
+  <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; background: rgba(0,0,0,.2); border: 1px solid #1e2a3a; padding: 8px 14px; border-radius: 6px;">
+    <span style="font-size: 11px; letter-spacing: 1px; color: #6c7a96; text-transform: uppercase;">
+      <span style="color:#00c8ff; margin-right: 4px;">⚙</span> Startup Mode
+    </span>
+    
+    <div class="wp-sel-wrap" style="min-width: 200px; max-width: 280px;">
+      <div class="wp-sel-box" id="box-menu-mode-${s.slot_id}" onclick="toggleCustomSel('menu-mode-${s.slot_id}', this.id)" style="padding: 4px 28px 4px 10px; background-position: right 8px center; background-color: rgba(0,0,0,.4);">${currentModeLabel}</div>
+      <div class="wp-sel-menu" id="menu-mode-${s.slot_id}">
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--autoupdate', 'Standard (Auto-Update)')">Standard (Auto-Update)</div>
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--no-update', 'Skip Update (--no-update)')">Skip Update (--no-update)</div>
+        <div class="wp-sel-item" onclick="pickCustomSel('menu-mode-${s.slot_id}', 'mode-${s.slot_id}', '--repair', 'Repair Files (--repair)')">Repair Files (run once) (--repair)</div>
+      </div>
+      <input type="hidden" id="mode-${s.slot_id}" value="${currentMode}">
+    </div>
+    </div>
+  ` : ''}
+
   <div class="wp-btn-row">
     <button class="wp-btn wp-btn-success" onclick="slotAct('${s.slot_id}','start')">&#9654; Start</button>
     <button class="wp-btn wp-btn-danger" onclick="slotAct('${s.slot_id}','stop')">&#9632; Stop</button>
@@ -1536,8 +1753,19 @@ async function saveVcConfig(sid){
   else{msg.innerHTML='<span style="color:#00e676">&#10003; Saved &#8212; restart bot to apply</span>';setTimeout(()=>{if(msg)msg.innerHTML='';},3000);}
 }
 
-async function slotAct(sid,action){
-  await api('POST',`/slots/${sid}/${action}`);
+async function slotAct(sid, action) {
+  let payload = {}; // Initialize an empty object
+  
+  if (action === 'start' || action === 'restart') {
+    const modeSel = document.getElementById(`mode-${sid}`);
+    if (modeSel) {
+      payload.mode = modeSel.value;
+    }
+  }
+  
+  // By sending `payload` directly (even if it's empty), fetch sends "{}" 
+  // instead of an empty body, which prevents Flask from crashing!
+  await api('POST', `/slots/${sid}/${action}`, payload);
   loadBots();
 }
 
@@ -1830,6 +2058,26 @@ async function loadSystem(){
   const sysLogBox = document.getElementById('sys-log');
   sysLogBox.innerHTML = (d.log_tail||[]).map(formatLogLine).join('\n');
   sysLogBox.scrollTop = sysLogBox.scrollHeight;
+
+  // --- Call our smart function! ---
+  loadPanelVersion();
+}
+
+async function loadPanelVersion() {
+    const versionDisplay = document.getElementById('panel-version-display');
+    try {
+        const response = await fetch('/api/system/version');
+        const data = await response.json();
+        
+        // Check if there is a mismatch!
+        if (data.latest && data.latest !== data.version) {
+            versionDisplay.innerHTML = `${data.version} <span style="color:#ffea00; font-size:12px; margin-left: 8px;">(Update available: ${data.latest})</span>`;
+        } else {
+            versionDisplay.innerText = data.version;
+        }
+    } catch (error) {
+        versionDisplay.innerText = "vUnknown";
+    }
 }
 
 // Function to pull live vitals
@@ -1951,6 +2199,7 @@ if (!_globalPoll) {
   pollBadges();
   _globalPoll = setInterval(pollBadges, 5000); // Check every 5 seconds
 }
+startRealtimeStream(); // Start the real-time connection instantly!
 
 </script>
 
