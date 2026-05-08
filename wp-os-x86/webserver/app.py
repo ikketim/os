@@ -20,7 +20,7 @@ import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 
 # ---------------------------------------------------------------------------
 # Version
@@ -493,6 +493,24 @@ def api_install_log(slot_id):
         return jsonify({"lines": [l.rstrip() for l in lines[-n:]]})
     except FileNotFoundError:
         return jsonify({"lines": []})
+
+@app.route("/api/stream", methods=["GET"])
+def api_stream():
+    def event_stream():
+        last_state = None
+        while True:
+            # Check the current state of all bots
+            current_state = list_slots()
+            
+            # If the state changed since the last check, push it to the browser!
+            if current_state != last_state:
+                yield f"data: {json.dumps(current_state)}\n\n"
+                last_state = current_state
+                
+            # Wait 1 second before checking again
+            time.sleep(1)
+            
+    return Response(event_stream(), mimetype="text/event-stream")
 
 # ---------------------------------------------------------------------------
 # Token API
@@ -1617,21 +1635,25 @@ async function loadBots(){
   suggestSlotId();
 }
 
-async function syncBotStates() {
-  // Only sync if the user is currently looking at the Bots tab
-  if (!document.getElementById('bots').classList.contains('active')) return;
+// --- TRUE REAL-TIME LISTENER ---
+function startRealtimeStream() {
+  const source = new EventSource('/api/stream');
 
-  const freshSlots = await api('GET', '/slots');
-  if (freshSlots && !freshSlots.error) {
+  source.onmessage = function(event) {
+    // Only update the UI if the user is looking at the Bots tab
+    if (!document.getElementById('bots').classList.contains('active')) return;
+
+    const freshSlots = JSON.parse(event.data);
     freshSlots.forEach(s => {
-      // 1. Silently update the colored Status Pill
+      
+      // 1. Instantly update the colored Status Pill
       const pill = document.getElementById(`status-${s.slot_id}`);
       if (pill && pill.textContent !== s.service_status) {
         pill.className = `wp-pill ${pillClass(s.service_status)}`;
         pill.textContent = s.service_status;
       }
 
-      // 2. Silently reset the Dropdown (ONLY if it just finished a --repair run)
+      // 2. Instantly reset the Dropdown after --repair finishes
       const modeInput = document.getElementById(`mode-${s.slot_id}`);
       const modeBox = document.getElementById(`box-menu-mode-${s.slot_id}`);
       
@@ -1646,7 +1668,13 @@ async function syncBotStates() {
         modeBox.textContent = modeMap[newMode] || 'Standard (Auto-Update)';
       }
     });
-  }
+  };
+
+  // If the connection drops (e.g., server reboots), automatically try to reconnect
+  source.onerror = function() {
+    source.close();
+    setTimeout(startRealtimeStream, 3000); 
+  };
 }
 
 function slotCard(s){
@@ -2187,8 +2215,8 @@ loadBots();
 if (!_globalPoll) {
   pollBadges();
   _globalPoll = setInterval(pollBadges, 5000); // Check every 5 seconds
-  setInterval(syncBotStates, 4000); // NEW: Silently sync bot statuses every 4 seconds!
 }
+startRealtimeStream(); // Start the real-time connection instantly!
 
 </script>
 
