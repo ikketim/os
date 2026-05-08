@@ -1617,6 +1617,38 @@ async function loadBots(){
   suggestSlotId();
 }
 
+async function syncBotStates() {
+  // Only sync if the user is currently looking at the Bots tab
+  if (!document.getElementById('bots').classList.contains('active')) return;
+
+  const freshSlots = await api('GET', '/slots');
+  if (freshSlots && !freshSlots.error) {
+    freshSlots.forEach(s => {
+      // 1. Silently update the colored Status Pill
+      const pill = document.getElementById(`status-${s.slot_id}`);
+      if (pill && pill.textContent !== s.service_status) {
+        pill.className = `wp-pill ${pillClass(s.service_status)}`;
+        pill.textContent = s.service_status;
+      }
+
+      // 2. Silently reset the Dropdown (ONLY if it just finished a --repair run)
+      const modeInput = document.getElementById(`mode-${s.slot_id}`);
+      const modeBox = document.getElementById(`box-menu-mode-${s.slot_id}`);
+      
+      if (modeInput && modeBox && modeInput.value === '--repair' && s.startup_mode !== '--repair') {
+        const modeMap = {
+          '--autoupdate': 'Standard (Auto-Update)',
+          '--no-update': 'Skip Update (--no-update)',
+          '--repair': 'Repair (--repair)'
+        };
+        const newMode = s.startup_mode || '--autoupdate';
+        modeInput.value = newMode;
+        modeBox.textContent = modeMap[newMode] || 'Standard (Auto-Update)';
+      }
+    });
+  }
+}
+
 function slotCard(s){
   const notInstalled=!s.installed;
   
@@ -1633,7 +1665,7 @@ function slotCard(s){
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
     <span style="font-family:'Share Tech Mono',monospace;font-size:15px;color:#00c8ff">${esc(s.slot_id)}</span>
     ${typeTag(s.type)}
-    <span class="wp-pill ${pillClass(s.service_status)}">${esc(s.service_status)}</span>
+    <span id="status-${s.slot_id}" class="wp-pill ${pillClass(s.service_status)}">${esc(s.service_status)}</span>
     <span style="color:#aee5ff;font-size:12px">${esc(s.label)}</span>
     <span class="wp-token-mask${s.has_token?' has-token':''}" style="margin-left:auto">${esc(s.token_mask)}</span>
   </div>
@@ -2155,6 +2187,7 @@ loadBots();
 if (!_globalPoll) {
   pollBadges();
   _globalPoll = setInterval(pollBadges, 5000); // Check every 5 seconds
+  setInterval(syncBotStates, 4000); // NEW: Silently sync bot statuses every 4 seconds!
 }
 
 </script>
