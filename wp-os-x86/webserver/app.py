@@ -25,7 +25,7 @@ from flask import Flask, jsonify, request, Response
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-PANEL_VERSION = "v0.0.16-ALPHA"
+PANEL_VERSION = "v0.0.17-ALPHA"
 _latest_version = None       # Cache for the latest version
 _last_version_check = 0      # Timestamp of the last GitHub ping
 
@@ -1137,7 +1137,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-modal-overlay.active .wp-modal {transform: scale(1);opacity: 1;}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width: 768px) {
-  wp-sys-grid {grid-template-columns: 1fr 1fr !important; gap: 10px !important;}
+  .wp-sys-grid {grid-template-columns: 1fr 1fr !important; gap: 10px !important;}
   .wp-sys-tile {padding: 10px !important;}
   .wp-table thead { display: none; }
   .wp-table tbody { display: block; width: 100%; }
@@ -1197,23 +1197,6 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 /* Nav Badges */
 .wp-nav-badge { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #ff1744; box-shadow: 0 0 8px #ff1744; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
 .wp-nav-badge.active { opacity: 1; }
-
-.version-card {
-    /* Adjust width based on your layout, or let it fill the grid */
-    text-align: center;
-}
-
-.version-badge {
-    display: inline-block;
-    padding: 8px 16px;
-    background-color: #2c2f33; /* Dark discord-like background */
-    color: #7289da; /* Blurple accent */
-    border-radius: 20px;
-    font-family: monospace;
-    font-size: 1.2rem;
-    font-weight: bold;
-    border: 1px solid #7289da;
-}
 
 </style>
 </head>
