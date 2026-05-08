@@ -1174,7 +1174,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-log-box { scroll-behavior: smooth; }
 
 /* Nav Badges */
-.wp-nav-badge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff1744; box-shadow: 0 0 8px #ff1744; vertical-align: middle; margin-left: 6px; opacity: 0; transition: opacity 0.3s ease; }
+.wp-nav-badge { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #ff1744; box-shadow: 0 0 8px #ff1744; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
 .wp-nav-badge.active { opacity: 1; }
 
 .version-card {
