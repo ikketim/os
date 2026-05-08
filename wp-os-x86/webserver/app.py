@@ -1576,11 +1576,21 @@ async function api(method, path, body){
     btn.innerHTML = '<span class="wp-spin" style="width:10px;height:10px;margin-right:6px"></span> Wait...';
   }
 
-  const opts={method,headers:{'Content-Type':'application/json'}};
+  // --- NEW: Add cache bypass headers ---
+  const opts = { 
+    method, 
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store' 
+  };
   if(body) opts.body=JSON.stringify(body);
   
+  // --- NEW: Add timestamp to the URL to completely bust the browser cache ---
+  const timestamp = new Date().getTime();
+  const separator = path.includes('?') ? '&' : '?';
+  const finalPath = '/api' + path + separator + '_t=' + timestamp;
+
   try {
-    const r=await fetch('/api'+path,opts);
+    const r=await fetch(finalPath, opts);
     return await r.json();
   } catch(e) {
     return {error: 'Network connection failed.'};
