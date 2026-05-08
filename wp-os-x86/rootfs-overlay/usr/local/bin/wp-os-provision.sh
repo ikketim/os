@@ -33,6 +33,7 @@ DEFAULT_BOT="@@DEFAULT_BOT@@"
 DEFAULT_BOT_LABEL="@@DEFAULT_BOT_LABEL@@"
 WEBSERVER_DIR="@@WEBSERVER_DIR@@"
 WEBSERVER_PORT="@@WEBSERVER_PORT@@"
+GITHUB_REPO="@@GITHUB_REPO@@"
 
 IS_LXC=0
 if grep -q "container=lxc" /proc/1/environ 2>/dev/null || \
@@ -176,6 +177,7 @@ BOT_VOICECHAT_BRANCH=${BOT_VOICECHAT_BRANCH}
 WEBSERVER_DIR=${WEBSERVER_DIR}
 WEBSERVER_PORT=${WEBSERVER_PORT}
 REPO_BASE=${REPO_BASE}
+GITHUB_REPO=${GITHUB_REPO}
 OS_PLATFORM=x86
 EOF
 chmod 644 /etc/wp-os/config.env
@@ -259,12 +261,14 @@ cat > /etc/systemd/system/wp-os-bot@.service <<EOF
 [Unit]
 Description=WhiteoutProjectOS Bot slot %i
 After=network.target
+StartLimitIntervalSec=30
+StartLimitBurst=3
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/wp-os-bot-start.sh %i
 WorkingDirectory=${BOTS_DIR}/%i
-Restart=always
+Restart=on-failure
 RestartSec=5
 User=${OS_USERNAME}
 StandardOutput=journal
