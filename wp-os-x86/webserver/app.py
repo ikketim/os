@@ -1030,7 +1030,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-hdr-right{display:flex;align-items:center;gap:8px;font-size:13px;color:#25d79d}
 .wp-dot{width:8px;height:8px;border-radius:50%;background:#00e676;box-shadow:0 0 8px #00e676;flex-shrink:0}
 .wp-nav{display:flex;gap:4px;padding:14px 32px;background:#172643;border-bottom:1px solid #1e2a3a}
-.wp-nav button{padding:8px 22px;border:none;border-radius:6px;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;background:transparent;color:#6c7a96;transition:.15s}
+.wp-nav button{position:relative;padding:8px 22px;border:none;border-radius:6px;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;background:transparent;color:#6c7a96;transition:.15s}
 .wp-nav button.active{background:#283d66;color:#cdd6f4;border:1px solid #1e2a3a}
 .wp-nav button:hover:not(.active){color:#cdd6f4}
 .wp-main{max-width:1100px;margin:0 auto;padding:28px 24px}
