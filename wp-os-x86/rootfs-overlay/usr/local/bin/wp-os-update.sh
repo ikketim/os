@@ -18,7 +18,7 @@ error() { echo -e "${RED}[ERR]${NC}    $*"; exit 1; }
 [ -z "${WEBSERVER_DIR:-}" ] && error "WEBSERVER_DIR not set in /etc/wp-os/config.env"
 
 # Fallback to TrelosLeras/os if it's not in the config yet
-REPO="${GITHUB_REPO:-TrelosLeras/os}"
+REPO="${GITHUB_REPO:-ikketim/os}"
 
 case "$OS_PLATFORM" in
   rpi|x86) ;;
