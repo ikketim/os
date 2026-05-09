@@ -24,7 +24,7 @@ Full flashing and first-boot instructions in the platform guides below.
 - **Multiple bot slots** — run several bots side by side on one device
 - **Token vault** — store spare tokens and assign them to slots in one click
 - **OS self-update** — update scripts and the web panel without reflashing (`System → OS Update`)
-- **SSH** — full remote access from day one
+- **SSH** — remote access from day one
 
 ---
 
