@@ -78,7 +78,7 @@ DB_SUBFOLDERS = {
 }
 
 AUDIO_SUBFOLDERS = {
-    "voicechat": "app/config/custom_audio" # <-- Change this if your bot uses a different folder name!
+    "voicechat": "app/config/custom_audio"
 }
 
 # ---------------------------------------------------------------------------
