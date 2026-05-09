@@ -17,15 +17,18 @@ import ssl
 import time
 import urllib.request
 import urllib.error
+import zipfile
+import shutil
+import io
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, send_file
 
 # ---------------------------------------------------------------------------
 # Version
 # ---------------------------------------------------------------------------
-PANEL_VERSION = "v0.0.9"
+PANEL_VERSION = "v0.0.17-ALPHA"
 _latest_version = None       # Cache for the latest version
 _last_version_check = 0      # Timestamp of the last GitHub ping
 
@@ -66,6 +69,13 @@ VAULT      = BOTS_DIR / ".vault.json"
 INSTALL_SCRIPT = "/usr/local/bin/wp-os-install-bot.sh"
 
 API_GROUPS = {"wos-py": "wos", "wos-js": "wos", "kingshot": "kingshot", "voicechat": "voicechat"}
+
+# Maps the bot "type" to its specific database folder inside BOTS_DIR / slot_id
+DB_SUBFOLDERS = {
+    "wos-py": "app/db",
+    "wos-js": "app/src/src/database",
+    "kingshot": "app/db"
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -511,6 +521,82 @@ def api_stream():
             time.sleep(1)
             
     return Response(event_stream(), mimetype="text/event-stream")
+
+@app.route("/api/slots/<slot_id>/backup/download", methods=["GET"])
+def api_slot_backup_download(slot_id):
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    # 1. Read the type to figure out the path
+    meta = _read_json(slot_dir / ".meta.json", {})
+    bot_type = meta.get("type")
+    
+    if bot_type not in DB_SUBFOLDERS:
+        return jsonify({"error": f"Backups are not supported for type: {bot_type}"}), 400
+        
+    db_path = slot_dir / DB_SUBFOLDERS[bot_type]
+    if not db_path.exists():
+        return jsonify({"error": "Database folder does not exist yet"}), 404
+
+    # 2. Compress the folder to a zip file in /tmp
+    zip_filename = f"/tmp/{slot_id}_backup"
+    shutil.make_archive(zip_filename, 'zip', db_path)
+    
+    # 3. Send it to the user
+    return send_file(f"{zip_filename}.zip", as_attachment=True)
+
+@app.route("/api/slots/<slot_id>/backup/upload", methods=["POST"])
+def api_slot_backup_upload(slot_id):
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    meta = _read_json(slot_dir / ".meta.json", {})
+    bot_type = meta.get("type")
+    
+    if bot_type not in DB_SUBFOLDERS:
+        return jsonify({"error": f"Backups are not supported for type: {bot_type}"}), 400
+        
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+        
+    uploaded_file = request.files['file']
+    if not uploaded_file.filename.endswith('.zip'):
+        return jsonify({"error": "Must be a .zip file"}), 400
+
+    db_path = slot_dir / DB_SUBFOLDERS[bot_type]
+
+    try:
+        # 1. Stop the bot so we don't corrupt the database
+        svc_run("stop", slot_id)
+        
+        # 2. Nuke the old database folder
+        if db_path.exists():
+            shutil.rmtree(db_path)
+        db_path.mkdir(parents=True, exist_ok=True)
+        
+        # 3. Extract the new backup
+        with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
+            zip_ref.extractall(db_path)
+            
+        # 4. Correct permissions so the bot can read the new files
+        uid, gid = _os_user_ids()
+        for root, dirs, files in os.walk(db_path):
+            os.chown(root, uid, gid)
+            for d in dirs:
+                os.chown(os.path.join(root, d), uid, gid)
+            for f in files:
+                os.chown(os.path.join(root, f), uid, gid)
+                
+        # 5. Restart the bot
+        svc_run("start", slot_id)
+        
+        return jsonify({"ok": True, "message": "Backup restored successfully!"})
+        
+    except Exception as e:
+        svc_run("start", slot_id) # Try to turn it back on if it crashes
+        return jsonify({"error": f"Restore failed: {str(e)}"}), 500
 
 # ---------------------------------------------------------------------------
 # Token API
@@ -1707,6 +1793,9 @@ function slotCard(s){
     <button class="wp-btn wp-btn-success" onclick="slotAct('${s.slot_id}','start')">&#9654; Start</button>
     <button class="wp-btn wp-btn-danger" onclick="slotAct('${s.slot_id}','stop')">&#9632; Stop</button>
     <button class="wp-btn wp-btn-warn" onclick="slotAct('${s.slot_id}','restart')">&#8635; Restart</button>
+   ${(s.type !== 'voicechat') ? `
+    <button class="wp-btn wp-btn-ghost" onclick="openBackupModal('${s.slot_id}')">&#128190; Backup</button>
+  ` : ''}
     <button class="wp-btn wp-btn-ghost" onclick="toggleLog('${s.slot_id}',this)">&#128203; Logs</button>
     <button class="wp-btn wp-btn-ghost" style="color:#ff5a7a;border-color:#ff1744" onclick="removeSlot('${s.slot_id}')">&#10005; Remove</button>
   </div>
@@ -1972,6 +2061,64 @@ async function confirmDelete() {
   loadTokens();
 }
 
+// --- BACKUP MODAL ---
+function openBackupModal(slot_id) {
+  _activeSlotId = slot_id;
+  document.getElementById('backup-slot-name').textContent = slot_id;
+  document.getElementById('backup-modal').classList.add('active');
+}
+
+function closeBackupModal() {
+  document.getElementById('backup-modal').classList.remove('active');
+  document.getElementById('backup-upload-input').value = ''; // Clear file input
+  _activeSlotId = null;
+}
+
+function downloadBackup() {
+  if (!_activeSlotId) return;
+  window.location.href = `/api/slots/${_activeSlotId}/backup/download`;
+  closeBackupModal();
+}
+
+async function handleBackupUpload(inputElement) {
+  if (!_activeSlotId) return;
+  const sid = _activeSlotId; // Capture the slot ID before closing the modal
+  
+  const file = inputElement.files[0];
+  if (!file) return;
+  
+  closeBackupModal(); // Close the modal immediately so the confirm prompt looks clean
+
+  const ok = await customConfirm('Restore Backup', `Are you sure you want to restore the database for <strong style="color:#00c8ff">${esc(sid)}</strong>?<br><br><span style="color:#ff5a7a">This will overwrite the current database and pause the bot!</span>`, false, true);
+  
+  if (!ok) {
+    inputElement.value = ''; 
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const r = await fetch(`/api/slots/${sid}/backup/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    const res = await r.json();
+    
+    if (res.error) {
+      await customConfirm('Error', res.error, true);
+    } else {
+      await customConfirm('Success', 'Backup restored successfully! The bot is restarting.', true);
+    }
+  } catch(e) {
+    await customConfirm('Error', 'Network connection failed during upload.', true);
+  }
+  
+  inputElement.value = ''; 
+  loadBots();
+}
+
 // --- GLOBAL MODAL EVENTS ---
 window.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.wp-modal-overlay').forEach(modal => {
@@ -1979,6 +2126,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (e.target === modal) {
         closeMoveModal();
         closeDeleteModal();
+        closeBackupModal();
       }
     });
   });
@@ -1988,6 +2136,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeMoveModal();
     closeDeleteModal();
+    closeBackupModal();
   }
 });
 
@@ -2202,6 +2351,36 @@ if (!_globalPoll) {
 startRealtimeStream(); // Start the real-time connection instantly!
 
 </script>
+
+<!-- Backup Modal -->
+<div id="backup-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 300px;">
+      <div class="wp-card-title">
+        <span class="wp-ic">&#128190;</span> Manage Backup
+      </div>
+
+      <div style="font-size:13px;color:#aee5ff;margin-bottom:16px">
+        What would you like to do with the database for <strong id="backup-slot-name" style="color:#00c8ff"></strong>?
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="wp-btn wp-btn-primary" onclick="downloadBackup()">
+          &#128190; Download Database
+        </button>
+        <div style="text-align:center;color:#6c7a96;font-size:11px;margin:2px 0;">OR</div>
+        <button class="wp-btn wp-btn-warn" onclick="document.getElementById('backup-upload-input').click()">
+          &#128193; Upload Database
+        </button>
+        <input type="file" id="backup-upload-input" style="display:none" accept=".zip" onchange="handleBackupUpload(this)">
+        
+        <button class="wp-btn wp-btn-ghost" onclick="closeBackupModal()" style="margin-top:4px;">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Move / Return Modal -->
 <div id="move-modal" class="wp-modal-overlay">
