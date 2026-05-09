@@ -1793,7 +1793,7 @@ function slotCard(s){
     <button class="wp-btn wp-btn-success" onclick="slotAct('${s.slot_id}','start')">&#9654; Start</button>
     <button class="wp-btn wp-btn-danger" onclick="slotAct('${s.slot_id}','stop')">&#9632; Stop</button>
     <button class="wp-btn wp-btn-warn" onclick="slotAct('${s.slot_id}','restart')">&#8635; Restart</button>
-   ${(s.type !== 'voicechat') ? `
+   ${(s.type !== 'voicechat' && s.installed) ? `
     <button class="wp-btn wp-btn-ghost" onclick="openBackupModal('${s.slot_id}')">&#128190; Backup</button>
   ` : ''}
     <button class="wp-btn wp-btn-ghost" onclick="toggleLog('${s.slot_id}',this)">&#128203; Logs</button>
