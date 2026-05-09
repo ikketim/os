@@ -2074,10 +2074,55 @@ function closeBackupModal() {
   _activeSlotId = null;
 }
 
-function downloadBackup() {
+async function downloadBackup() {
   if (!_activeSlotId) return;
-  window.location.href = `/api/slots/${_activeSlotId}/backup/download`;
+  const sid = _activeSlotId; // Capture ID before closing modal
   closeBackupModal();
+
+  try {
+    const response = await fetch(`/api/slots/${sid}/backup/download`);
+    
+    // 1. Did the server return an error message (JSON)?
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      const data = await response.json();
+      
+      // Catch our specific missing folder error and make it friendly
+      if (data.error && data.error.includes("does not exist yet")) {
+        await customConfirm('Notice', 'Database folder doesn\'t exist yet!<br><br>Please click <strong style="color:#00e676">▶ Start</strong> to run the bot at least once so it can generate its database files.', true);
+      } else {
+        await customConfirm('Error', data.error || 'Failed to prepare backup.', true);
+      }
+      return;
+    }
+
+    // 2. If it's not an error, it's the ZIP file! Download it programmatically.
+    if (!response.ok) throw new Error("Network response failed");
+    
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = downloadUrl;
+    
+    // Extract filename from headers if possible, otherwise fallback
+    const disposition = response.headers.get('content-disposition');
+    let filename = `${sid}_backup.zip`;
+    if (disposition && disposition.indexOf('filename=') !== -1) {
+      filename = disposition.split('filename=')[1].replace(/"/g, '');
+    }
+    
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up memory
+    window.URL.revokeObjectURL(downloadUrl);
+    a.remove();
+
+  } catch (e) {
+    await customConfirm('Error', 'Network connection failed during download request.', true);
+  }
 }
 
 async function handleBackupUpload(inputElement) {
