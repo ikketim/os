@@ -51,13 +51,13 @@ if ! curl --silent --max-time 15 --output /dev/null https://deb.nodesource.com/ 
 fi
 
 # -- 1. Hostname
-echo "[1/13] Setting hostname..."
+echo "[1/9] Setting hostname..."
 hostnamectl set-hostname "$OS_HOSTNAME" 2>/dev/null || echo "$OS_HOSTNAME" > /etc/hostname
 sed -i "s/127.0.1.1.*/127.0.1.1\t${OS_HOSTNAME}/" /etc/hosts 2>/dev/null || \
   echo "127.0.1.1\t${OS_HOSTNAME}" >> /etc/hosts
 
 # -- 2. User
-echo "[2/13] Creating user ${OS_USERNAME}..."
+echo "[2/9] Creating user ${OS_USERNAME}..."
 if ! id "$OS_USERNAME" &>/dev/null; then
   useradd -m -s /bin/bash -G sudo,adm "$OS_USERNAME"
 fi
@@ -66,12 +66,12 @@ echo "${OS_USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${OS_USERNAME}"
 chmod 440 "/etc/sudoers.d/${OS_USERNAME}"
 
 # -- 3. System update
-echo "[3/13] Updating system..."
+echo "[3/9] Updating system..."
 apt-get update -qq
 apt-get upgrade -y -qq --no-install-recommends
 
 # -- 4. Core packages
-echo "[4/13] Installing core packages..."
+echo "[4/9] Installing core packages..."
 apt-get install -y -qq --no-install-recommends \
   python3 python3-full python3-venv python3-pip \
   wget curl git ca-certificates gnupg \
@@ -80,7 +80,7 @@ apt-get install -y -qq --no-install-recommends \
   feh jq net-tools unzip
 
 # -- 5. Node.js 22
-echo "[5/13] Installing Node.js 22..."
+echo "[5/9] Installing Node.js 22..."
 install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
   | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
@@ -89,8 +89,8 @@ echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.co
 apt-get update -qq
 apt-get install -y -qq nodejs
 
-# -- 9. Runtime config + bots directory
-echo "[9/13] Writing runtime config and bot directory structure..."
+# -- 6. Runtime config + bots directory
+echo "[6/9] Writing runtime config and bot directory structure..."
 mkdir -p /etc/wp-os
 cat > /etc/wp-os/config.env <<EOF
 OS_USERNAME=${OS_USERNAME}
@@ -139,20 +139,20 @@ chown root:root "${SLOT_DIR}/.meta.json"
 chown "${OS_USERNAME}:${OS_USERNAME}" \
   "${SLOT_DIR}/token.txt" "${SLOT_DIR}" "${SLOT_DIR}/app"
 
-# -- 10. Install default bot
-echo "[10/13] Installing default bot (${DEFAULT_BOT}) into slot ${DEFAULT_SLOT_ID}..."
+# -- 7. Install default bot
+echo "[7/9] Installing default bot (${DEFAULT_BOT}) into slot ${DEFAULT_SLOT_ID}..."
 chmod +x /usr/local/bin/wp-os-install-bot.sh
 /usr/local/bin/wp-os-install-bot.sh "${DEFAULT_SLOT_ID}" "${DEFAULT_BOT}" || \
   echo "[WARN] Default bot install had errors -- check /var/log/wp-os-setup.log"
 
-# -- 11. SSH
-echo "[11/13] Configuring SSH..."
+# -- 8. SSH
+echo "[8/9] Configuring SSH..."
 cp -n /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 
-# -- 13. Systemd services + web control panel
-echo "[13/13] Installing systemd services and web control panel..."
+# -- 9. Systemd services + web control panel
+echo "[9/9] Installing systemd services and web control panel..."
 
 # Bot slot service template (OS_USERNAME baked in here at provision time)
 cat > /etc/systemd/system/wp-os-bot@.service <<EOF
