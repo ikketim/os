@@ -77,7 +77,7 @@ apt-get install -y -qq --no-install-recommends \
   wget curl git ca-certificates gnupg \
   build-essential python3-dev \
   openssh-server python3-flask \
-  feh jq net-tools unzip xdotool
+  feh jq net-tools unzip
 
 # -- 5. Node.js 22
 echo "[5/13] Installing Node.js 22..."
@@ -88,76 +88,6 @@ echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.co
   > /etc/apt/sources.list.d/nodesource.list
 apt-get update -qq
 apt-get install -y -qq nodejs
-
-# -- 6. Desktop
-echo "[6/13] Installing desktop (${DESKTOP})..."
-if [ "$IS_LXC" -eq 1 ]; then
-  apt-get install -y -qq --no-install-recommends \
-    xfce4 xfce4-terminal xfce4-session dbus-x11 x11vnc xvfb
-else
-  apt-get install -y -qq --no-install-recommends \
-    xfce4 xfce4-terminal xfce4-session lightdm lightdm-gtk-greeter x11vnc xvfb
-  systemctl enable lightdm || true
-  systemctl set-default graphical.target || true
-  mkdir -p /etc/lightdm/lightdm.conf.d
-  cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf <<EOF
-[Seat:*]
-autologin-user=${OS_USERNAME}
-autologin-user-timeout=0
-user-session=${DESKTOP}
-EOF
-fi
-
-# -- 7. Wallpaper
-echo "[7/13] Setting up wallpaper..."
-WALL_DIR="/usr/share/wallpapers/wp-os"
-mkdir -p "$WALL_DIR"
-wget -q -O "${WALL_DIR}/wp-os.png" "$BACKGROUND_IMAGE_URL" || true
-
-mkdir -p "/home/${OS_USERNAME}/.config/autostart"
-cat > "/home/${OS_USERNAME}/.config/autostart/wallpaper.desktop" <<'DESK'
-[Desktop Entry]
-Type=Application
-Name=Set Wallpaper
-Exec=feh --bg-scale /usr/share/wallpapers/wp-os/wp-os.png
-Hidden=false
-X-GNOME-Autostart-enabled=true
-DESK
-
-mkdir -p "/home/${OS_USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml"
-cat > "/home/${OS_USERNAME}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml" <<'XML'
-<?xml version="1.0" encoding="UTF-8"?>
-<channel name="xfce4-desktop" version="1.0">
-  <property name="backdrop" type="empty">
-    <property name="screen0" type="empty">
-      <property name="monitor0" type="empty">
-        <property name="workspace0" type="empty">
-          <property name="image-style" type="int" value="5"/>
-          <property name="last-image" type="string" value="/usr/share/wallpapers/wp-os/wp-os.png"/>
-        </property>
-      </property>
-    </property>
-  </property>
-</channel>
-XML
-chown -R "${OS_USERNAME}:${OS_USERNAME}" "/home/${OS_USERNAME}/.config"
-
-# -- 8. Desktop shortcut
-echo "[8/13] Creating desktop shortcut..."
-DESK_DIR="/home/${OS_USERNAME}/Desktop"
-mkdir -p "$DESK_DIR"
-cat > "${DESK_DIR}/WhiteoutProjectOS-Panel.desktop" <<EOF
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=WhiteoutProjectOS Control Panel
-Exec=xdg-open http://localhost:${WEBSERVER_PORT}
-Icon=applications-internet
-Terminal=false
-Categories=Network;
-EOF
-chmod +x "${DESK_DIR}/WhiteoutProjectOS-Panel.desktop"
-chown -R "${OS_USERNAME}:${OS_USERNAME}" "$DESK_DIR"
 
 # -- 9. Runtime config + bots directory
 echo "[9/13] Writing runtime config and bot directory structure..."
@@ -221,38 +151,6 @@ cp -n /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 
-# -- 12. VNC
-echo "[12/13] Setting up VNC..."
-mkdir -p "/home/${OS_USERNAME}/.vnc"
-x11vnc -storepasswd "$OS_PASSWORD" "/home/${OS_USERNAME}/.vnc/passwd" 2>/dev/null || true
-chown -R "${OS_USERNAME}:${OS_USERNAME}" "/home/${OS_USERNAME}/.vnc"
-
-cat > /etc/systemd/system/xvfb.service <<'EOF'
-[Unit]
-Description=Virtual Framebuffer
-After=network.target
-[Service]
-ExecStart=/usr/bin/Xvfb :1 -screen 0 1920x1080x24
-Restart=always
-RestartSec=3
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat > /etc/systemd/system/x11vnc.service <<EOF
-[Unit]
-Description=x11vnc VNC Server
-After=xvfb.service
-Requires=xvfb.service
-[Service]
-ExecStart=/usr/bin/x11vnc -display :1 -rfbauth /home/${OS_USERNAME}/.vnc/passwd -rfbport 5900 -forever -shared -noxdamage
-Restart=always
-RestartSec=3
-User=${OS_USERNAME}
-[Install]
-WantedBy=multi-user.target
-EOF
-
 # -- 13. Systemd services + web control panel
 echo "[13/13] Installing systemd services and web control panel..."
 
@@ -278,8 +176,6 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-if [ "$IS_LXC" -eq 0 ]; then touch /etc/wp-os/gui_enabled; fi
-
 chmod +x /usr/local/bin/wp-os-bot-manager.sh \
          /usr/local/bin/wp-os-bot-start.sh 2>/dev/null || true
 
@@ -304,12 +200,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-for svc in xvfb x11vnc wp-os-web ssh openssh-server; do
+for svc in wp-os-web ssh openssh-server; do
   systemctl enable "$svc" 2>/dev/null || true
-done
-systemctl enable "wp-os-bot@${DEFAULT_SLOT_ID}" 2>/dev/null || true
-
-for svc in ssh openssh-server xvfb x11vnc wp-os-web; do
   systemctl start "$svc" 2>/dev/null || true
 done
 systemctl start "wp-os-bot@${DEFAULT_SLOT_ID}" 2>/dev/null || true
@@ -327,7 +219,6 @@ echo " WhiteoutProjectOS Provisioning COMPLETE"
 echo " $(date)"
 echo "========================================="
 echo " SSH  : port 22  (user: ${OS_USERNAME})"
-echo " VNC  : port 5900"
 echo " Web  : http://<ip>:${WEBSERVER_PORT}"
 echo "========================================="
 
