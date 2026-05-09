@@ -75,7 +75,7 @@ case "$BOT_TYPE" in
     exec npm start
     ;;
   *)
-    echo "ERROR: unknown bot type '${BOT_TYPE}'" >&2
+    echo "ERROR: unknown bot type '${BOT_TYPE}' in slot ${SLOT_ID}" >&2
     exit 1
     ;;
 esac
