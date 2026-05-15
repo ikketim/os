@@ -127,6 +127,7 @@ inject_and_run() {
     -e "s|@@WEBSERVER_DIR@@|${WEBSERVER_DIR}|g" \
     -e "s|@@WEBSERVER_PORT@@|${WEBSERVER_PORT}|g" \
     -e "s|@@REPO_BASE@@|${REPO_BASE}|g" \
+    -e "s|@@GITHUB_REPO@@|${GITHUB_REPO}|g" \
     "${SCRIPT_DIR}/rootfs-overlay/usr/local/bin/wp-os-provision.sh" \
     > "$PROVISION_TMP"
 
@@ -178,7 +179,6 @@ inject_and_run() {
   echo ""
   echo -e "  Web panel : ${YELLOW}http://${CT_ASSIGNED_IP}:${WEBSERVER_PORT}${NC}"
   echo -e "  SSH       : ${YELLOW}ssh ${OS_USERNAME}@${CT_ASSIGNED_IP}${NC}"
-  echo -e "  VNC       : ${YELLOW}${CT_ASSIGNED_IP}:5900${NC}  (password: ${OS_PASSWORD})"
   echo ""
   echo -e "  pct stop ${CTID}  |  pct start ${CTID}  |  pct destroy ${CTID}"
   echo ""

@@ -17,10 +17,13 @@ import ssl
 import time
 import urllib.request
 import urllib.error
+import zipfile
+import shutil
+import io
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, send_file
 
 # ---------------------------------------------------------------------------
 # Version
@@ -66,6 +69,17 @@ VAULT      = BOTS_DIR / ".vault.json"
 INSTALL_SCRIPT = "/usr/local/bin/wp-os-install-bot.sh"
 
 API_GROUPS = {"wos-py": "wos", "wos-js": "wos", "kingshot": "kingshot", "voicechat": "voicechat"}
+
+# Maps the bot "type" to its specific database folder inside BOTS_DIR / slot_id
+DB_SUBFOLDERS = {
+    "wos-py": "app/db",
+    "wos-js": "app/src/src/database",
+    "kingshot": "app/db"
+}
+
+AUDIO_SUBFOLDERS = {
+    "voicechat": "app/config/custom_audio"
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -511,6 +525,151 @@ def api_stream():
             time.sleep(1)
             
     return Response(event_stream(), mimetype="text/event-stream")
+
+@app.route("/api/slots/<slot_id>/backup/download", methods=["GET"])
+def api_slot_backup_download(slot_id):
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    # 1. Read the type to figure out the path
+    meta = _read_json(slot_dir / ".meta.json", {})
+    bot_type = meta.get("type")
+    
+    if bot_type not in DB_SUBFOLDERS:
+        return jsonify({"error": f"Backups are not supported for type: {bot_type}"}), 400
+        
+    db_path = slot_dir / DB_SUBFOLDERS[bot_type]
+    if not db_path.exists():
+        return jsonify({"error": "Database folder does not exist yet"}), 404
+
+    # 2. Compress the folder to a zip file in /tmp
+    zip_filename = f"/tmp/{slot_id}_backup"
+    shutil.make_archive(zip_filename, 'zip', db_path)
+    
+    # 3. Send it to the user
+    return send_file(f"{zip_filename}.zip", as_attachment=True)
+
+@app.route("/api/slots/<slot_id>/backup/upload", methods=["POST"])
+def api_slot_backup_upload(slot_id):
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    meta = _read_json(slot_dir / ".meta.json", {})
+    bot_type = meta.get("type")
+    
+    if bot_type not in DB_SUBFOLDERS:
+        return jsonify({"error": f"Backups are not supported for type: {bot_type}"}), 400
+        
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+        
+    uploaded_file = request.files['file']
+    if not uploaded_file.filename.endswith('.zip'):
+        return jsonify({"error": "Must be a .zip file"}), 400
+
+    db_path = slot_dir / DB_SUBFOLDERS[bot_type]
+
+    try:
+        # 1. Stop the bot so we don't corrupt the database
+        svc_run("stop", slot_id)
+        
+        # 2. Nuke the old database folder
+        if db_path.exists():
+            shutil.rmtree(db_path)
+        db_path.mkdir(parents=True, exist_ok=True)
+        
+        # 3. Extract the new backup
+        with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
+            zip_ref.extractall(db_path)
+            
+        # 4. Correct permissions so the bot can read the new files
+        uid, gid = _os_user_ids()
+        for root, dirs, files in os.walk(db_path):
+            os.chown(root, uid, gid)
+            for d in dirs:
+                os.chown(os.path.join(root, d), uid, gid)
+            for f in files:
+                os.chown(os.path.join(root, f), uid, gid)
+                
+        # 5. Restart the bot
+        svc_run("start", slot_id)
+        
+        return jsonify({"ok": True, "message": "Backup restored successfully!"})
+        
+    except Exception as e:
+        svc_run("start", slot_id) # Try to turn it back on if it crashes
+        return jsonify({"error": f"Restore failed: {str(e)}"}), 500
+
+@app.route("/api/slots/<slot_id>/audio/download", methods=["GET"])
+def api_slot_audio_download(slot_id):
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    meta = _read_json(slot_dir / ".meta.json", {})
+    bot_type = meta.get("type")
+    
+    if bot_type not in AUDIO_SUBFOLDERS:
+        return jsonify({"error": f"Audio backups are not supported for: {bot_type}"}), 400
+        
+    audio_path = slot_dir / AUDIO_SUBFOLDERS[bot_type]
+    
+    # Check if the folder doesn't exist OR if it is completely empty
+    if not audio_path.exists() or not any(audio_path.iterdir()):
+        return jsonify({"error": "audio_empty"}), 400
+
+    zip_filename = f"/tmp/{slot_id}_audio_backup"
+    shutil.make_archive(zip_filename, 'zip', audio_path)
+    
+    return send_file(f"{zip_filename}.zip", as_attachment=True)
+
+@app.route("/api/slots/<slot_id>/audio/upload", methods=["POST"])
+def api_slot_audio_upload(slot_id):
+    slot_dir = BOTS_DIR / slot_id
+    if not slot_dir.exists():
+        return jsonify({"error": "Slot not found"}), 404
+
+    meta = _read_json(slot_dir / ".meta.json", {})
+    bot_type = meta.get("type")
+    
+    if bot_type not in AUDIO_SUBFOLDERS:
+        return jsonify({"error": f"Audio backups are not supported for: {bot_type}"}), 400
+        
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+        
+    uploaded_file = request.files['file']
+    if not uploaded_file.filename.endswith('.zip'):
+        return jsonify({"error": "Must be a .zip file"}), 400
+
+    audio_path = slot_dir / AUDIO_SUBFOLDERS[bot_type]
+
+    try:
+        svc_run("stop", slot_id)
+        
+        if audio_path.exists():
+            shutil.rmtree(audio_path)
+        audio_path.mkdir(parents=True, exist_ok=True)
+        
+        with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
+            zip_ref.extractall(audio_path)
+            
+        uid, gid = _os_user_ids()
+        for root, dirs, files in os.walk(audio_path):
+            os.chown(root, uid, gid)
+            for d in dirs:
+                os.chown(os.path.join(root, d), uid, gid)
+            for f in files:
+                os.chown(os.path.join(root, f), uid, gid)
+                
+        svc_run("start", slot_id)
+        return jsonify({"ok": True, "message": "Audio restored successfully!"})
+        
+    except Exception as e:
+        svc_run("start", slot_id)
+        return jsonify({"error": f"Restore failed: {str(e)}"}), 500
 
 # ---------------------------------------------------------------------------
 # Token API
@@ -1043,7 +1202,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:#172643;position:relative}
 .wp-hdr::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)}
 .wp-logo{display:flex;align-items:center;gap:12px}
-.wp-logo-icon{width:48px;height:48px;border:1px solid #cdd6f4;border-radius:10px;display:grid;place-items:center;font-size:13px;color:#00c8ff;font-weight:700;font-family:'Share Tech Mono',monospace;letter-spacing:1px}
+.wp-logo-icon{width:48px;height:48px;border:1px solid #1e2a3a;border-radius:10px;object-fit:cover;background:rgba(0,0,0,.25);}
 .wp-logo-text{font-size:17px;font-weight:600;letter-spacing:2px;color:#cdd6f4}
 .wp-logo-text span{color:#00c8ff}
 .wp-hdr-right{display:flex;align-items:center;gap:8px;font-size:13px;color:#25d79d}
@@ -1204,7 +1363,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 
 <div class="wp-hdr">
   <div class="wp-logo">
-    <div class="wp-logo-icon">WP</div>
+    <img src="https://raw.githubusercontent.com/ikketim/os/main/etc/wp-os-logo.png" class="wp-logo-icon" alt="Logo">
     <div class="wp-logo-text">WhiteoutProject<span>OS</span></div>
   </div>
   <div class="wp-hdr-right">
@@ -1707,6 +1866,12 @@ function slotCard(s){
     <button class="wp-btn wp-btn-success" onclick="slotAct('${s.slot_id}','start')">&#9654; Start</button>
     <button class="wp-btn wp-btn-danger" onclick="slotAct('${s.slot_id}','stop')">&#9632; Stop</button>
     <button class="wp-btn wp-btn-warn" onclick="slotAct('${s.slot_id}','restart')">&#8635; Restart</button>
+   ${(s.type !== 'voicechat' && s.installed) ? `
+    <button class="wp-btn wp-btn-ghost" onclick="openBackupModal('${s.slot_id}')">&#128190; Backup</button>
+  ` : ''}
+  ${(s.type === 'voicechat' && s.installed) ? `
+    <button class="wp-btn wp-btn-ghost" onclick="openAudioModal('${s.slot_id}')">&#127925; Backup</button>
+  ` : ''}
     <button class="wp-btn wp-btn-ghost" onclick="toggleLog('${s.slot_id}',this)">&#128203; Logs</button>
     <button class="wp-btn wp-btn-ghost" style="color:#ff5a7a;border-color:#ff1744" onclick="removeSlot('${s.slot_id}')">&#10005; Remove</button>
   </div>
@@ -1844,27 +2009,7 @@ async function loadTokens(){
   const vbody=document.getElementById('vault-body');
   if(!d.vault.length){
     vbody.innerHTML='<tr><td colspan="4" style="color:#6c7a96;padding:16px 12px">No tokens in vault. Add one above.</td></tr>';
-    return `<tr>
-    <td data-label="Token" style="font-family:'Share Tech Mono',monospace;color:#cdd6f4">${esc(v.token_mask)}</td>
-    <td data-label="Note" style="color:#aee5ff">${v.comment ? esc(v.comment) : '&#8212;'}</td>
-    <td data-label="Added" style="color:#6c7a96;font-size:11px">${esc(v.added.slice(0,10))}</td>
-    <td data-label="Actions"><div class="wp-btn-row" style="gap:6px">
-      
-      <!-- NEW CUSTOM DROPDOWN -->
-      <div class="wp-sel-wrap">
-        <div class="wp-sel-box" id="box-menu-${v.token_hash}" onclick="toggleCustomSel('menu-${v.token_hash}', this.id)">Select slot...</div>
-        <div class="wp-sel-menu" id="menu-${v.token_hash}">
-          <div class="wp-sel-item" onclick="pickCustomSel('menu-${v.token_hash}', 'asgn-${v.token_hash}', '', 'Select slot...')">Select slot...</div>
-          ${slotOpts}
-        </div>
-        <input type="hidden" id="asgn-${v.token_hash}" value="">
-      </div>
-      <!-- END CUSTOM DROPDOWN -->
-
-      <button class="wp-btn wp-btn-primary" style="font-size:10px;padding:4px 10px" onclick="assignVault('${v.token_hash}')">Assign</button>
-      <button class="wp-btn wp-btn-danger" style="font-size:10px;padding:4px 10px" onclick="removeVault('${v.token_hash}')">Remove</button>
-    </div></td>
-  </tr>`;
+    return;
   }
 
   vbody.innerHTML=d.vault.map(v=>{
@@ -1972,6 +2117,208 @@ async function confirmDelete() {
   loadTokens();
 }
 
+// --- BACKUP MODAL ---
+function openBackupModal(slot_id) {
+  _activeSlotId = slot_id;
+  document.getElementById('backup-slot-name').textContent = slot_id;
+  document.getElementById('backup-modal').classList.add('active');
+}
+
+function closeBackupModal() {
+  document.getElementById('backup-modal').classList.remove('active');
+  document.getElementById('backup-upload-input').value = ''; // Clear file input
+  _activeSlotId = null;
+}
+
+async function downloadBackup() {
+  if (!_activeSlotId) return;
+  const sid = _activeSlotId; // Capture ID before closing modal
+  closeBackupModal();
+
+  try {
+    const response = await fetch(`/api/slots/${sid}/backup/download`);
+    
+    // 1. Did the server return an error message (JSON)?
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      const data = await response.json();
+      
+      // Catch our specific missing folder error and make it friendly
+      if (data.error && data.error.includes("does not exist yet")) {
+        await customConfirm('Notice', 'Database folder doesn\'t exist yet!<br><br>Please click <strong style="color:#00e676">▶ Start</strong> to run the bot at least once so it can generate its database files.', true);
+      } else {
+        await customConfirm('Error', data.error || 'Failed to prepare backup.', true);
+      }
+      return;
+    }
+
+    // 2. If it's not an error, it's the ZIP file! Download it programmatically.
+    if (!response.ok) throw new Error("Network response failed");
+    
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = downloadUrl;
+    
+    // Extract filename from headers if possible, otherwise fallback
+    const disposition = response.headers.get('content-disposition');
+    let filename = `${sid}_backup.zip`;
+    if (disposition && disposition.indexOf('filename=') !== -1) {
+      filename = disposition.split('filename=')[1].replace(/"/g, '');
+    }
+    
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up memory
+    window.URL.revokeObjectURL(downloadUrl);
+    a.remove();
+
+  } catch (e) {
+    await customConfirm('Error', 'Network connection failed during download request.', true);
+  }
+}
+
+async function handleBackupUpload(inputElement) {
+  if (!_activeSlotId) return;
+  const sid = _activeSlotId; // Capture the slot ID before closing the modal
+  
+  const file = inputElement.files[0];
+  if (!file) return;
+  
+  closeBackupModal(); // Close the modal immediately so the confirm prompt looks clean
+
+  const ok = await customConfirm('Restore Backup', `Are you sure you want to restore the database for <strong style="color:#00c8ff">${esc(sid)}</strong>?<br><br><span style="color:#ff5a7a">This will overwrite the current database and pause the bot!</span>`, false, true);
+  
+  if (!ok) {
+    inputElement.value = ''; 
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const r = await fetch(`/api/slots/${sid}/backup/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    const res = await r.json();
+    
+    if (res.error) {
+      await customConfirm('Error', res.error, true);
+    } else {
+      await customConfirm('Success', 'Backup restored successfully! The bot is restarting.', true);
+    }
+  } catch(e) {
+    await customConfirm('Error', 'Network connection failed during upload.', true);
+  }
+  
+  inputElement.value = ''; 
+  loadBots();
+}
+
+// --- AUDIO MODAL ---
+function openAudioModal(slot_id) {
+  _activeSlotId = slot_id;
+  document.getElementById('audio-slot-name').textContent = slot_id;
+  document.getElementById('audio-modal').classList.add('active');
+}
+
+function closeAudioModal() {
+  document.getElementById('audio-modal').classList.remove('active');
+  document.getElementById('audio-upload-input').value = ''; 
+  _activeSlotId = null;
+}
+
+async function downloadAudio() {
+  if (!_activeSlotId) return;
+  const sid = _activeSlotId;
+  closeAudioModal();
+
+  try {
+    const response = await fetch(`/api/slots/${sid}/audio/download`);
+    
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      const data = await response.json();
+      
+      // Here is your custom error trap!
+      if (data.error === "audio_empty") {
+        await customConfirm('Notice', 'There is no files to download. <br><br> Custom Audio folder is currently empty!', true);
+      } else {
+        await customConfirm('Error', data.error || 'Failed to prepare audio backup.', true);
+      }
+      return;
+    }
+
+    if (!response.ok) throw new Error("Network response failed");
+    
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = downloadUrl;
+    
+    const disposition = response.headers.get('content-disposition');
+    let filename = `${sid}_audio_backup.zip`;
+    if (disposition && disposition.indexOf('filename=') !== -1) {
+      filename = disposition.split('filename=')[1].replace(/"/g, '');
+    }
+    
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    
+    window.URL.revokeObjectURL(downloadUrl);
+    a.remove();
+
+  } catch (e) {
+    await customConfirm('Error', 'Network connection failed during download request.', true);
+  }
+}
+
+async function handleAudioUpload(inputElement) {
+  if (!_activeSlotId) return;
+  const sid = _activeSlotId; 
+  
+  const file = inputElement.files[0];
+  if (!file) return;
+  
+  closeAudioModal(); 
+
+  const ok = await customConfirm('Restore Audio', `Are you sure you want to restore audio files for <strong style="color:#00c8ff">${esc(sid)}</strong>?<br><br><span style="color:#ff5a7a">This will overwrite the current audio folder and briefly pause the bot!</span>`, false, true);
+  
+  if (!ok) {
+    inputElement.value = ''; 
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const r = await fetch(`/api/slots/${sid}/audio/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    const res = await r.json();
+    
+    if (res.error) {
+      await customConfirm('Error', res.error, true);
+    } else {
+      await customConfirm('Success', 'Audio files restored successfully! The bot is restarting.', true);
+    }
+  } catch(e) {
+    await customConfirm('Error', 'Network connection failed during upload.', true);
+  }
+  
+  inputElement.value = ''; 
+  loadBots();
+}
+
 // --- GLOBAL MODAL EVENTS ---
 window.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.wp-modal-overlay').forEach(modal => {
@@ -1979,6 +2326,8 @@ window.addEventListener('DOMContentLoaded', () => {
       if (e.target === modal) {
         closeMoveModal();
         closeDeleteModal();
+        closeBackupModal();
+        closeAudioModal();
       }
     });
   });
@@ -1988,6 +2337,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeMoveModal();
     closeDeleteModal();
+    closeBackupModal();
+    closeAudioModal();
   }
 });
 
@@ -2202,6 +2553,65 @@ if (!_globalPoll) {
 startRealtimeStream(); // Start the real-time connection instantly!
 
 </script>
+
+<!-- Backup Modal -->
+<div id="backup-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 300px;">
+      <div class="wp-card-title">
+        <span class="wp-ic">&#128190;</span> Manage Backup
+      </div>
+
+      <div style="font-size:13px;color:#aee5ff;margin-bottom:16px">
+        What would you like to do with the database for <strong id="backup-slot-name" style="color:#00c8ff"></strong>?
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="wp-btn wp-btn-primary" onclick="downloadBackup()">
+          &#128190; Download Database
+        </button>
+        <div style="text-align:center;color:#6c7a96;font-size:11px;margin:2px 0;">OR</div>
+        <button class="wp-btn wp-btn-warn" onclick="document.getElementById('backup-upload-input').click()">
+          &#128193; Upload Database
+        </button>
+        <input type="file" id="backup-upload-input" style="display:none" accept=".zip" onchange="handleBackupUpload(this)">
+        
+        <button class="wp-btn wp-btn-ghost" onclick="closeBackupModal()" style="margin-top:4px;">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Audio Modal -->
+<div id="audio-modal" class="wp-modal-overlay">
+  <div class="wp-modal">
+    <div class="wp-card" style="min-width: 300px;">
+      <div class="wp-card-title">
+        <span class="wp-ic">&#127925;</span> Manage Custom Audio Files
+      </div>
+
+      <div style="font-size:13px;color:#aee5ff;margin-bottom:16px">
+        What would you like to do with the custom audio for <strong id="audio-slot-name" style="color:#00c8ff"></strong>?
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="wp-btn wp-btn-primary" onclick="downloadAudio()">
+          &#128190; Download Custom Audio Zip
+        </button>
+        <div style="text-align:center;color:#6c7a96;font-size:11px;margin:2px 0;">OR</div>
+        <button class="wp-btn wp-btn-warn" onclick="document.getElementById('audio-upload-input').click()">
+          &#128193; Upload Custom Audio Zip
+        </button>
+        <input type="file" id="audio-upload-input" style="display:none" accept=".zip" onchange="handleAudioUpload(this)">
+        
+        <button class="wp-btn wp-btn-ghost" onclick="closeAudioModal()" style="margin-top:4px;">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Move / Return Modal -->
 <div id="move-modal" class="wp-modal-overlay">

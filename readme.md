@@ -24,7 +24,7 @@ Full flashing and first-boot instructions in the platform guides below.
 - **Multiple bot slots** — run several bots side by side on one device
 - **Token vault** — store spare tokens and assign them to slots in one click
 - **OS self-update** — update scripts and the web panel without reflashing (`System → OS Update`)
-- **SSH + VNC + XFCE desktop** — full remote access from day one
+- **SSH** — remote access from day one
 
 ---
 
@@ -66,7 +66,6 @@ Full flashing and first-boot instructions in the platform guides below.
 | Password | `wpusr` |
 | Web panel | `http://<ip>:8080` |
 | SSH | `ssh wp-os-user@<ip>` |
-| VNC | `<ip>:5900` |
 
 ---
 
@@ -83,8 +82,8 @@ WhiteoutProjectOS/
 
 ## Security Note
 
-The web panel (`:8080`) and VNC (`:5900`) are **unencrypted and unauthenticated**. Keep them on a trusted local network. For remote access use SSH port-forwarding:
+The web panel (`:8080`) is **unencrypted and unauthenticated**. Keep it on a trusted local network. For remote access use SSH port-forwarding:
 
 ```bash
-ssh -L 8080:localhost:8080 -L 5900:localhost:5900 wp-os-user@<ip>
+ssh -L 8080:localhost:8080 wp-os-user@<ip>
 ```
