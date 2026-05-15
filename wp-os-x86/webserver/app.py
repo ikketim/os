@@ -1202,7 +1202,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 .wp-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 32px;background:#172643;position:relative}
 .wp-hdr::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)}
 .wp-logo{display:flex;align-items:center;gap:12px}
-.wp-logo-icon{width:48px;height:48px;border:1px solid #cdd6f4;border-radius:10px;display:grid;place-items:center;font-size:13px;color:#00c8ff;font-weight:700;font-family:'Share Tech Mono',monospace;letter-spacing:1px}
+.wp-logo-icon{width:48px;height:48px;border:1px solid #1e2a3a;border-radius:10px;object-fit:cover;background:rgba(0,0,0,.25);}
 .wp-logo-text{font-size:17px;font-weight:600;letter-spacing:2px;color:#cdd6f4}
 .wp-logo-text span{color:#00c8ff}
 .wp-hdr-right{display:flex;align-items:center;gap:8px;font-size:13px;color:#25d79d}
@@ -1363,7 +1363,7 @@ body{font-family:'Exo 2',sans-serif;font-weight:300;background:#172643;color:#cd
 
 <div class="wp-hdr">
   <div class="wp-logo">
-    <div class="wp-logo-icon">WP</div>
+    <img src="https://raw.githubusercontent.com/ikketim/os/main/etc/wp-os-logo.png" class="wp-logo-icon" alt="Logo">
     <div class="wp-logo-text">WhiteoutProject<span>OS</span></div>
   </div>
   <div class="wp-hdr-right">
